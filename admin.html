@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="robots" content="noindex,nofollow">
-    <title>管理者アプリ | v7.7.9 DEBUG</title>
+    <title>管理者アプリ | v7.8.0 FINAL</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -74,16 +74,6 @@
             padding: 0 1.5rem;
         }
 
-        .custom-scroll::-webkit-scrollbar {
-            width: 5px;
-            height: 5px;
-        }
-
-        .custom-scroll::-webkit-scrollbar-thumb {
-            background: rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-        }
-
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none !important;
@@ -132,9 +122,7 @@
             const [dictionary, setDictionary] = useState([]);
             const [loading, setLoading] = useState(false);
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-            const [showSettings, setShowSettings] = useState(false);
-            const [showDebug, setShowDebug] = useState(false);
-            const [masterStats, setMasterStats] = useState({ s1: 0, pm: 0 });
+            const [syncStatus, setSyncStatus] = useState("IDLE");
 
             useEffect(() => {
                 const passVerified = localStorage.getItem("ap_v7") === APP_PASS;
@@ -142,7 +130,7 @@
             }, []);
 
             const loadAll = async () => {
-                setLoading(true);
+                setLoading(true); setSyncStatus("SYNCING");
                 try {
                     const [repRes, dictRes] = await Promise.all([
                         fetch(`${GAS_URL}?action=getPendingReports`),
@@ -153,71 +141,102 @@
                     setReports(repData || []);
                     setDictionary(dictData.dictionary || []);
                     window.HOKUTO_MASTER = dictData.data;
-                    setMasterStats({
-                        s1: Object.keys(dictData.data["設定１相当"]).length,
-                        pm: Object.keys(dictData.data["優良店"]).length
-                    });
-                } catch (e) { console.error(e); } finally { setLoading(false); }
+                    setSyncStatus("SUCCESS");
+                } catch (e) { setSyncStatus("ERROR"); console.error(e); } finally { setLoading(false); }
+            };
+
+            // ヘッダーがズレていても目的の値を探す究極のヘルパー
+            const getField = (obj, keys) => {
+                if (!obj) return "";
+                for (let k of keys) {
+                    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+                }
+                // キー名がない場合（""等）を探す
+                const allKeys = Object.keys(obj);
+                for (let ak of allKeys) {
+                    if (ak.trim() === "" || ak === "undefined") {
+                        const val = obj[ak];
+                        // 備考欄っぽい（[メダル:...を含む）なら優先
+                        if (typeof val === 'string' && val.includes("メダル")) return val;
+                    }
+                }
+                return "";
             };
 
             const normalize = (s) => (s || "").toString().replace(/[！-～]/g, m => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)).replace(/[ー－—―]/g, "-").replace(/[\s　±枚北斗]/g, "").toLowerCase();
 
-            const parseMemoDetails = (memo) => {
-                const res = { text: memo || "", medal: 0, cash: 0 };
-                if (!memo) return res;
-                // 究極に柔軟な抽出
+            const parseFinance = (report) => {
+                const memo = getField(report, ["備考", "memo", "備考欄", ""]);
+                const result = { text: memo || "", medal: 0, cash: 0 };
+                if (!memo) return result;
                 const mMatch = memo.match(/(?:メダル|枚)[:：]?\s*(-?\d+)/);
                 const cMatch = memo.match(/(?:現金|投資|投資額|円)[:：]?\s*(-?\d+)/);
-                if (mMatch) res.medal = parseInt(mMatch[1]) || 0;
-                if (cMatch) res.cash = parseInt(cMatch[1]) || 0;
-                res.text = memo.replace(/\[.*\]/g, "").trim();
-                return res;
+                if (mMatch) result.medal = parseInt(mMatch[1]) || 0;
+                if (cMatch) result.cash = parseInt(cMatch[1]) || 0;
+                result.text = memo.replace(/\[.*\]/g, "").trim();
+                return result;
+            };
+
+            const matchEvInRange = (val, mData) => {
+                if (mData[val] !== undefined) return mData[val];
+                // 範囲キー (例: 200～400) を探す
+                for (let key of Object.keys(mData)) {
+                    const parts = key.match(/(-?\d+)～\+?(-?\d+)/);
+                    if (parts) {
+                        const start = parseInt(parts[1]);
+                        const end = parseInt(parts[2]);
+                        if (val >= start && val <= end) return mData[key];
+                    }
+                    if (key.includes("以上")) {
+                        const start = parseInt(key.match(/\d+/));
+                        if (val >= start) return mData[key];
+                    }
+                    if (key.includes("未満")) {
+                        const end = parseInt(key.match(/\d+/));
+                        if (val < end) return mData[key];
+                    }
+                }
+                return 0;
             };
 
             const handleAnalyze = (report, mode = evMode) => {
                 if (!report || !window.HOKUTO_MASTER) return;
                 const master = window.HOKUTO_MASTER[mode] || {};
-                const lines = (report.稼働内容 || report.details || "").split("\n");
+                const content = getField(report, ["稼働内容", "details", "内容"]);
+                const lines = content.split("\n");
 
                 const results = lines.map(line => {
                     if (!line.trim()) return null;
                     let match = { text: line.trim(), ev: 0, machine: "", color: "bg-slate-400" };
-
-                    // 1. 辞書マッチ
                     const foundDict = dictionary.find(d => {
                         const keywords = (d.キーワード || "").split(",").map(k => k.trim()).filter(Boolean);
                         return keywords.some(k => line.includes(k));
                     });
-
                     if (foundDict) {
                         match.machine = foundDict.機種名;
                         match.color = foundDict.色コード;
-
-                        // 2. マスタ完全一致 or 部分一致 (北斗等の表記揺れ対策)
                         let mData = master[foundDict.機種名];
                         if (!mData) {
                             const dNorm = normalize(foundDict.機種名);
                             const key = Object.keys(master).find(k => normalize(k) === dNorm || normalize(k).includes(dNorm) || dNorm.includes(normalize(k)));
                             if (key) mData = master[key];
                         }
-
                         if (mData) {
-                            const numbers = line.replace(/\D/g, " ").trim().split(/\s+/);
-                            numbers.forEach(numStr => {
-                                const val = parseInt(numStr);
-                                if (mData[val] !== undefined) match.ev = mData[val];
-                            });
+                            const numbers = line.replace(/\D/g, " ").trim().split(/\s+/).map(n => parseInt(n));
+                            for (let num of numbers) {
+                                const foundEv = matchEvInRange(num, mData);
+                                if (foundEv !== 0) { match.ev = foundEv; break; }
+                            }
                         }
                     }
                     return match;
                 }).filter(Boolean);
-                setLogs(results);
-                setSelectedId(report.ID);
+                setLogs(results); setSelectedId(report.ID);
             };
 
             const onApprove = async () => {
                 const report = reports.find(r => r.ID === selectedId);
-                const info = parseMemoDetails(report.備考);
+                const info = parseFinance(report);
                 const payload = {
                     id: report.ID, date: report.日付, name: report.報告者, store: report.店舗名,
                     machine: logs.map(l => l.machine).filter(Boolean).join("/"),
@@ -228,7 +247,7 @@
                 try {
                     setLoading(true);
                     await fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ action: "approveReport", data: payload }) });
-                    setReports(reports.filter(r => r.ID !== selectedId)); setSelectedId(null); setLogs([]);
+                    setReports(reports.filter(r => r.ID !== selectedId)); setSelectedId(null); setLogs([]); loadAll();
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
@@ -236,11 +255,11 @@
 
             if (isLocked) return (
                 <div className="flex items-center justify-center min-h-screen bg-slate-900 p-6">
-                    <div className="w-full max-w-sm space-y-6">
-                        <h1 className="text-3xl font-black italic text-[#0076FF] text-center">ADMIN TERMINAL</h1>
-                        <form onSubmit={(e) => { e.preventDefault(); if (passInput === APP_PASS) { setIsLocked(false); localStorage.setItem("ap_v7", APP_PASS); loadAll(); } else { alert("Failed"); } }} className="space-y-4">
-                            <input type="password" value={passInput} onChange={e => setPassInput(e.target.value)} className="w-full bg-slate-800 border-none rounded-2xl py-4 text-center text-white font-black outline-none focus:ring-2 ring-[#0076FF]" placeholder="PASSWORD" autoFocus />
-                            <button type="submit" className="w-full bg-[#0076FF] py-4 rounded-2xl text-white font-black">LOGIN</button>
+                    <div className="w-full max-w-sm text-center space-y-6">
+                        <h1 className="text-3xl font-black italic text-[#0076FF]">ADMIN LOGIN</h1>
+                        <form onSubmit={(e) => { e.preventDefault(); if (passInput === APP_PASS) { setIsLocked(false); localStorage.setItem("ap_v7", APP_PASS); loadAll(); } else { alert("Error"); } }}>
+                            <input type="password" value={passInput} onChange={e => setPassInput(e.target.value)} className="w-full bg-slate-800 border-none rounded-2xl py-4 text-center text-white font-black mb-4 focus:ring-2 ring-[#0076FF] outline-none" placeholder="合言葉" autoFocus />
+                            <button type="submit" className="w-full bg-[#0076FF] py-4 rounded-2xl text-white font-black">ENTRANCE</button>
                         </form>
                     </div>
                 </div>
@@ -256,87 +275,58 @@
                     <div className={`sidebar flex flex-col ${isSidebarOpen ? 'open' : ''}`}>
                         <div className="p-8 border-b border-white/5">
                             <h1 className="text-2xl font-black text-white italic">承認待ちリスト</h1>
-                            <div className="mt-4 p-4 bg-white/5 rounded-2xl text-[8px] font-black text-slate-400 space-y-1">
-                                <div>REPORTS: {reports.length}</div>
-                                <div>DICTIONARY: {dictionary.length}</div>
-                                <div>MASTER S1: {masterStats.s1}</div>
-                                <div>MASTER PM: {masterStats.pm}</div>
-                            </div>
+                            <div className={`mt-2 text-[8px] font-black ${syncStatus === 'SUCCESS' ? 'text-emerald-500' : 'text-rose-500'}`}>SYNC: {syncStatus}</div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scroll p-4 space-y-2">
                             {reports.map(r => (
                                 <div key={r.ID} onClick={() => { handleAnalyze(r); setIsSidebarOpen(false); }} className={`p-4 rounded-2xl cursor-pointer transition-all ${selectedId === r.ID ? 'bg-[#0076FF] text-white' : 'hover:bg-white/5 text-slate-400'}`}>
-                                    <div className="text-[9px] font-black opacity-40">{r.日付} • {r.報告者}</div>
-                                    <div className="font-black text-xs truncate">{r.店舗名}</div>
+                                    <div className="text-[9px] font-black opacity-40">{r.日付 || "N/A"} • {r.報告者 || "N/A"}</div>
+                                    <div className="font-black text-xs truncate">{r.店舗名 || "N/A"}</div>
                                 </div>
                             ))}
                         </div>
-                        <div className="p-6 border-t border-white/5 flex flex-col gap-2">
+                        <div className="p-6 border-t border-white/5">
                             <button onClick={loadAll} className="w-full bg-white/5 py-3 rounded-xl text-white text-[10px] font-black hover:bg-white/10">SYNC DATA</button>
-                            <div className="flex gap-2">
-                                <button onClick={() => setShowSettings(true)} className="flex-1 bg-white/5 py-3 rounded-xl text-white text-[10px] font-black">DICTIONARY</button>
-                                <button onClick={() => setShowDebug(!showDebug)} className={`p-3 rounded-xl font-black text-[10px] ${showDebug ? 'bg-orange-600 text-white' : 'bg-white/5 text-white'}`}>DEBUG</button>
-                            </div>
                         </div>
                     </div>
 
                     <div className="main custom-scroll overflow-y-auto">
-                        {showDebug && (
-                            <div className="mb-6 p-6 bg-orange-100 border-2 border-orange-200 rounded-[2rem] text-[10px] space-y-4 font-mono overflow-hidden">
-                                <div className="flex justify-between items-center border-b border-orange-200 pb-2">
-                                    <span className="font-black text-orange-800 tracking-widest">RAW DATA INSPECTOR</span>
-                                    <button onClick={() => setShowDebug(false)}>✕</button>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="text-orange-900 font-bold">● Selected Report JSON:</div>
-                                    <pre className="bg-white/50 p-4 rounded-xl overflow-x-auto">{JSON.stringify(selectedReport, null, 2)}</pre>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="text-orange-900 font-bold">● Loaded Master Keys ({evMode}):</div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {window.HOKUTO_MASTER && window.HOKUTO_MASTER[evMode] && Object.keys(window.HOKUTO_MASTER[evMode]).map(k => (
-                                            <span key={k} className="bg-white/50 px-2 py-1 rounded border border-orange-200">{k}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {selectedReport ? (
                             <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn pb-20">
-                                <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-xl">
-                                    <p className="text-xl lg:text-3xl font-black italic tracking-tight mb-8 leading-tight">{selectedReport.稼働内容 || selectedReport.details}</p>
-                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 border-t border-white/10 pt-8 mt-4 uppercase text-[9px] font-black text-slate-500">
+                                <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-xl relative overflow-hidden">
+                                    <p className="text-xl lg:text-3xl font-black italic tracking-tight mb-8 leading-tight relative z-10">{getField(selectedReport, ["稼働内容", "details", "内容"])}</p>
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 border-t border-white/10 pt-8 mt-4 uppercase text-[9px] font-black text-slate-500 relative z-10">
                                         <div><div>Operator</div><div className="text-sm font-black text-white">{selectedReport.報告者}</div></div>
                                         <div><div>Store</div><div className="text-sm font-black text-white">{selectedReport.店舗名}</div></div>
                                         <div><div>Date</div><div className="text-sm font-black text-white">{selectedReport.日付}</div></div>
-                                        <div><div>Time</div><div className="text-sm font-black text-[#0076FF]">{selectedReport.稼働時間}h</div></div>
+                                        <div><div>Time</div><div className="text-sm font-black text-[#0076FF]">{getField(selectedReport, ["稼働時間", "hours", "メモ"])}h</div></div>
                                     </div>
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-[#0076FF11] rounded-full -mr-32 -mt-32 blur-3xl"></div>
                                 </div>
 
-                                <div className="bg-white rounded-[2.5rem] p-10 lg:p-14 shadow-xl space-y-10 border border-slate-100">
+                                <div className="bg-white rounded-[2.5rem] p-10 lg:p-14 shadow-xl border border-slate-100 space-y-10">
                                     <div className="grid lg:grid-cols-2 gap-10 border-b border-slate-100 pb-10">
                                         <div className="space-y-6">
                                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Financial Check</h3>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="bg-slate-50 p-6 rounded-3xl">
                                                     <div className="text-[8px] font-black text-slate-400 uppercase mb-2">P-Tokens (メダル)</div>
-                                                    <div className="text-2xl font-black">{parseMemoDetails(selectedReport.備考).medal} <span className="text-xs text-slate-400 font-bold">枚</span></div>
+                                                    <div className="text-2xl font-black">{parseFinance(selectedReport).medal.toLocaleString()} <span className="text-xs text-slate-400">枚</span></div>
                                                 </div>
                                                 <div className="bg-slate-50 p-6 rounded-3xl">
                                                     <div className="text-[8px] font-black text-slate-400 uppercase mb-2">Invest (現金)</div>
-                                                    <div className="text-2xl font-black">{parseMemoDetails(selectedReport.備考).cash} <span className="text-xs text-slate-400 font-bold">円</span></div>
+                                                    <div className="text-2xl font-black">{parseFinance(selectedReport).cash.toLocaleString()} <span className="text-xs text-slate-400">円</span></div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="space-y-6">
                                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Report Note</h3>
-                                            <div className="bg-slate-50 p-6 rounded-3xl text-sm font-medium text-slate-600 min-h-[100px] border border-slate-100">{parseMemoDetails(selectedReport.備考).text || "メモなし"}</div>
+                                            <div className="bg-slate-50 p-6 rounded-3xl text-sm font-medium text-slate-600 min-h-[100px] border border-slate-100">{parseFinance(selectedReport).text || "メモなし"}</div>
                                         </div>
                                     </div>
 
                                     <div className="flex justify-between items-center bg-slate-100 p-2 rounded-3xl border border-slate-200">
-                                        <h3 className="text-xl font-black italic ml-4">Analysis</h3>
+                                        <h3 className="text-xl font-black italic ml-4">Analysis Matrix</h3>
                                         <div className="flex gap-2">
                                             {["設定１相当", "優良店"].map(m => (
                                                 <button key={m} onClick={() => { setEvMode(m); handleAnalyze(selectedReport, m); }} className={`px-6 py-2.5 text-[9px] font-black rounded-2xl transition-all ${evMode === m ? 'bg-white shadow-lg text-[#0076FF]' : 'text-slate-400'}`}>{m}</button>
@@ -346,28 +336,30 @@
 
                                     <div className="space-y-4">
                                         {logs.map((log, i) => (
-                                            <div key={i} className="bg-slate-50 p-6 rounded-[2rem] flex flex-col lg:flex-row justify-between items-center gap-4">
-                                                <div className="flex-1 flex gap-3 w-full">
-                                                    <span className={`text-[8px] font-black px-3 py-1.5 rounded-lg text-white ${log.color || 'bg-slate-400'}`}>{log.machine}</span>
-                                                    <span className="text-sm font-black">{log.text}</span>
+                                            <div key={i} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col lg:flex-row justify-between items-center gap-4">
+                                                <div className="flex-1 flex gap-3 w-full items-center">
+                                                    <span className={`text-[8px] font-black px-3 py-1.5 rounded-lg text-white shadow-sm shrink-0 ${log.color || 'bg-slate-400'}`}>{log.machine}</span>
+                                                    <span className="text-sm font-black text-slate-800">{log.text}</span>
                                                 </div>
                                                 <div className="flex items-center gap-4">
                                                     <input type="number" inputMode="numeric" value={log.ev === 0 ? "" : log.ev} onChange={e => { const n = [...logs]; n[i].ev = parseInt(e.target.value) || 0; setLogs(n); }} className="input-ev" placeholder="0" />
-                                                    <button onClick={() => setLogs(logs.filter((_, idx) => idx !== i))} className="text-rose-500 p-2">✕</button>
+                                                    <button onClick={() => setLogs(logs.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-rose-500 text-2xl transition-colors shrink-0">✕</button>
                                                 </div>
                                             </div>
                                         ))}
-                                        <button onClick={() => setLogs([...logs, { text: "手動追加", ev: 0, machine: "", color: "bg-slate-300" }])} className="w-full py-4 border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300 font-black">+ ADD LOG MANUALLY</button>
                                     </div>
 
-                                    <div className="bg-[#0076FF] p-10 rounded-[3rem] text-white flex flex-col lg:flex-row justify-between items-center gap-8">
-                                        <div><div className="text-[10px] font-black opacity-50 mb-1">TOTAL EV</div><div className="text-6xl font-black italic tracking-tighter">{logs.reduce((s, l) => s + l.ev, 0).toLocaleString()} <span className="text-lg opacity-30">円</span></div></div>
-                                        <button onClick={onApprove} className="bg-white text-[#0076FF] px-12 py-5 rounded-2xl font-black shadow-lg">APPROVE & SAVE</button>
+                                    <div className="bg-[#0076FF] p-10 rounded-[3rem] text-white flex flex-col lg:flex-row justify-between items-center gap-8 shadow-2xl">
+                                        <div className="text-center lg:text-left">
+                                            <div className="text-[10px] font-black opacity-50 mb-1">TOTAL AGGREGATED EV</div>
+                                            <div className="text-6xl font-black italic tracking-tighter">{logs.reduce((s, l) => s + l.ev, 0).toLocaleString()} <span className="text-lg opacity-30">円</span></div>
+                                        </div>
+                                        <button onClick={onApprove} className="bg-white text-[#0076FF] px-14 py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-slate-50 active:scale-95 transition-all text-xs">APPROVE & COMPLETE</button>
                                     </div>
                                 </div>
                             </div>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-200 text-6xl font-black italic uppercase select-none opacity-30">管理者アプリ</div>
+                            <div className="h-full flex items-center justify-center text-slate-200 text-6xl lg:text-8xl font-black italic uppercase select-none opacity-20">管理者アプリ</div>
                         )}
                     </div>
                 </div>
