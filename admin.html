@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="robots" content="noindex,nofollow">
-    <title>管理者アプリ | v7.8.5 FINAL</title>
+    <title>管理者アプリ | v7.8.9 FINAL</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -189,6 +189,7 @@
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [showDebug, setShowDebug] = useState(false);
+            const [syncInfo, setSyncInfo] = useState("");
 
             useEffect(() => {
                 const passVerified = localStorage.getItem("ap_v7") === APP_PASS;
@@ -196,7 +197,7 @@
             }, []);
 
             const loadAll = async () => {
-                setLoading(true);
+                setLoading(true); setSyncInfo("Syncing...");
                 try {
                     const [repRes, dictRes] = await Promise.all([
                         fetch(`${GAS_URL}?action=getPendingReports`),
@@ -207,7 +208,9 @@
                     setReports(repData || []);
                     setDictionary(dictData.dictionary || []);
                     window.HOKUTO_MASTER = dictData.data;
-                } catch (e) { console.error(e); } finally { setLoading(false); }
+                    const masterCount = Object.keys(dictData.data["設定１相当"] || {}).length;
+                    setSyncInfo(`完了: 報告${(repData || []).length}件 / マスタ${masterCount}枚`);
+                } catch (e) { setSyncInfo("Sync Error"); console.error(e); } finally { setLoading(false); }
             };
 
             const saveDict = async (newDict) => {
@@ -232,8 +235,6 @@
                 return "";
             };
 
-            const normalize = (s) => (s || "").toString().replace(/[！-～]/g, m => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)).replace(/[ー－—―]/g, "-").replace(/[\s　±枚]/g, "").toLowerCase();
-
             const parseFinance = (report) => {
                 const memo = getField(report, ["備考", "memo", "備考欄", ""]);
                 const result = { text: memo || "", medal: 0, cash: 0 };
@@ -247,21 +248,19 @@
             };
 
             const matchEvInRange = (val, mData) => {
+                if (mData === undefined || mData === null) return 0;
+                const gKeys = Object.keys(mData).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+                if (gKeys.length === 0) return 0;
                 if (mData[val] !== undefined) return mData[val];
-                for (let key of Object.keys(mData)) {
-                    const parts = key.match(/([+-]?\d+)～([+-]?\d+)/);
-                    if (parts) {
-                        const start = parseInt(parts[1]); const end = parseInt(parts[2]);
-                        if (val >= start && val <= end) return mData[key];
-                    }
-                    if (key.includes("以上")) {
-                        const start = parseInt(key.replace(/[^-0-9]/g, ""));
-                        if (val >= start) return mData[key];
-                    }
-                    if (key.includes("未満")) {
-                        const end = parseInt(key.replace(/[^-0-9]/g, ""));
-                        if (val < end) return mData[key];
-                    }
+                if (val <= gKeys[0]) return mData[gKeys[0]];
+                if (val >= gKeys[gKeys.length - 1]) return mData[gKeys[gKeys.length - 1]];
+                const lower = [...gKeys].reverse().find(k => k < val);
+                const upper = gKeys.find(k => k > val);
+                if (lower !== undefined && upper !== undefined) {
+                    const lowEv = mData[lower];
+                    const upEv = mData[upper];
+                    const ev = lowEv + (upEv - lowEv) * (val - lower) / (upper - lower);
+                    return Math.round(ev);
                 }
                 return 0;
             };
@@ -281,7 +280,7 @@
                     });
                     if (foundDict) {
                         match.machine = foundDict.機種名; match.color = foundDict.色コード;
-                        const numbers = line.replace(/[()（）]/g, " ").match(/[+-]?\d+/g) || [];
+                        const numbers = line.replace(/\s*([+-])\s*/g, "$1").replace(/[()（）]/g, " ").match(/[+-]?\d+/g) || [];
                         const isReset = /リセ|リセット|設定変更|変更後/.test(line);
                         let gCount = numbers[0] ? parseInt(numbers[0]) : 0;
                         let dVal = numbers[1] ? parseInt(numbers[1]) : null;
@@ -292,13 +291,12 @@
                             bestKey = sheetNames.find(k => {
                                 const p = k.match(/([+-]?\d+)～([+-]?\d+)/);
                                 if (p) return dVal >= parseInt(p[1]) && dVal <= parseInt(p[2]);
-                                if (k.includes("以上") && dVal >= parseInt(k.replace(/[^-0-9]/g, ""))) return true;
                                 if (k.includes("未満") && dVal < parseInt(k.replace(/[^-0-9]/g, ""))) return true;
+                                if (k.includes("以上") && dVal >= parseInt(k.replace(/[^-0-9]/g, ""))) return true;
                                 return false;
-                            }) || sheetNames.find(k => /0～|±0|\+100～/.test(k));
-                        } else {
-                            bestKey = sheetNames.find(k => /0～|±0|\+100～/.test(k));
+                            });
                         }
+                        if (!bestKey) bestKey = sheetNames.find(k => /0～|±0|±0～|\+100～/.test(k));
                         if (bestKey) { match.source = bestKey; match.ev = matchEvInRange(gCount, master[bestKey]); }
                     }
                     return match;
@@ -349,7 +347,7 @@
                         <div className="p-8 border-b border-white/5 flex justify-between items-center">
                             <div>
                                 <h1 className="text-2xl font-black text-white italic">承認待ちリスト</h1>
-                                <p className="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-widest opacity-50 font-mono">Pending: {reports.length}</p>
+                                <p className="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-widest opacity-50 font-mono">{syncInfo || `Pending: ${reports.length}`}</p>
                             </div>
                             <button onClick={() => setShowSettings(true)} className="text-white opacity-40 hover:opacity-100 transition-opacity text-xl">⚙</button>
                         </div>
@@ -379,7 +377,7 @@
                         {reports.find(r => r.ID === selectedId) ? (
                             <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn pb-20">
                                 <div className="bg-slate-900 rounded-[2.5rem] p-10 lg:p-14 text-white shadow-xl relative overflow-hidden">
-                                    <p className="text-xl lg:text-3xl font-black italic tracking-tight mb-8 leading-tight relative z-10">{getField(reports.find(r => r.ID === selectedId), ["稼働内容", "details", "内容"])}</p>
+                                    <p className="text-xl lg:text-3xl font-black italic tracking-tight mb-8 leading-tight relative z-10 whitespace-pre-wrap">{getField(reports.find(r => r.ID === selectedId), ["稼働内容", "details", "内容"])}</p>
                                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 border-t border-white/10 pt-8 mt-4 uppercase text-[9px] font-black text-slate-500 relative z-10">
                                         <div><div>Operator</div><div className="text-sm font-black text-white">{reports.find(r => r.ID === selectedId).報告者}</div></div>
                                         <div><div>Store</div><div className="text-sm font-black text-white">{reports.find(r => r.ID === selectedId).店舗名}</div></div>
@@ -406,7 +404,7 @@
                                         </div>
                                         <div className="space-y-6">
                                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Report Note</h3>
-                                            <div className="bg-slate-50 p-7 rounded-3xl text-sm font-medium text-slate-600 min-h-[100px] border border-slate-100">{parseFinance(reports.find(r => r.ID === selectedId)).text || "メモなし"}</div>
+                                            <div className="bg-slate-50 p-7 rounded-3xl text-sm font-medium text-slate-600 min-h-[100px] border border-slate-100 whitespace-pre-wrap">{parseFinance(reports.find(r => r.ID === selectedId)).text || "メモなし"}</div>
                                         </div>
                                     </div>
 
@@ -447,9 +445,9 @@
                                 </div>
                             </div>
                         ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-200 text-6xl lg:text-8xl font-black italic uppercase select-none opacity-20 text-center p-10">
+                            <div className="h-full flex flex-col items-center justify-center text-slate-200 text-6xl lg:text-8xl font-black italic uppercase select-none opacity-60 text-center p-10">
                                 <div className="tracking-tighter">管理者アプリ</div>
-                                <div className="text-[11px] tracking-[1.5em] mt-8 opacity-50 font-black">Select Report to Start</div>
+                                <div className="text-[11px] tracking-[1.5em] mt-8 opacity-70 font-black">Select Report to Start</div>
                             </div>
                         )}
                     </div>
