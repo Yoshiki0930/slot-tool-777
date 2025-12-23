@@ -153,7 +153,7 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzWS5yzOOTXqYx7yWrN8mtOvsXIjfoI1JDnola4TuoRS5-KStUVRR7M9YOoRfMbJUjR9g/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbz1PCMXJ_IYDjnU5HU_KQbm6Vcxp1-iYdaVR-9I7rCtflg2snUYR2UJm74U1YlXZE8u4w/exec";
         const APP_PASS = "nogawa";
 
         function AdminApp() {
@@ -169,6 +169,7 @@
             const [loading, setLoading] = useState(false);
             const [isSavingDict, setIsSavingDict] = useState(false);
             const [selectedIds, setSelectedIds] = useState([]);
+            const [syncInfo, setSyncInfo] = useState({ status: "IDLE", message: "" });
 
             useEffect(() => {
                 const passVerified = localStorage.getItem("ap_v7") === APP_PASS;
@@ -191,6 +192,7 @@
 
             const loadAll = async () => {
                 setLoading(true);
+                setSyncInfo({ status: "SYNCING", message: "通信中..." });
                 try {
                     const [repRes, dictRes] = await Promise.all([
                         fetch(`${GAS_URL}?action=getPendingReports`),
@@ -201,7 +203,13 @@
                     setReports(repData);
                     setDictionary(dictData.dictionary || []);
                     window.HOKUTO_MASTER = dictData.data;
-                } catch (e) { console.error(e); }
+
+                    const sheetCount = Object.keys(dictData.data["設定１相当"]).length + Object.keys(dictData.data["優良店"]).length;
+                    setSyncInfo({ status: "SUCCESS", message: `完了: 報告${repData.length}件 / マスタ${sheetCount}件` });
+                } catch (e) {
+                    console.error(e);
+                    setSyncInfo({ status: "ERROR", message: "同期失敗: " + e.message });
+                }
                 finally { setLoading(false); }
             };
 
@@ -209,19 +217,39 @@
                 if (!report || !window.HOKUTO_MASTER) return;
                 const master = window.HOKUTO_MASTER[mode] || {};
                 const lines = (report.稼働内容 || report.details || "").split("\n");
+
                 const results = lines.map(line => {
                     let match = { text: line, ev: 0, machine: "", color: "bg-slate-400" };
+
+                    // 1. 機種判定
+                    let foundMachine = null;
                     dictionary.forEach(d => {
                         const keywords = d.キーワード.split(",").map(k => k.trim());
                         if (keywords.some(k => line.includes(k))) {
-                            match.machine = d.機種名;
-                            match.color = d.色コード;
-                            const mData = master[d.機種名] || {};
-                            Object.keys(mData).forEach(k => { if (line.includes(k)) match.ev = mData[k]; });
+                            foundMachine = d;
                         }
                     });
+
+                    if (foundMachine) {
+                        match.machine = foundMachine.機種名;
+                        match.color = foundMachine.色コード;
+
+                        // 2. 期待値計算 (G数などを抽出してマスタと照合)
+                        const mData = master[foundMachine.機種名] || {};
+                        const numbers = line.match(/\d+/g) || [];
+
+                        // その行に含まれる数字がマスタのキー（G数）と一致するか探す
+                        numbers.forEach(numStr => {
+                            const num = parseInt(numStr);
+                            // マスタにそのG数があれば採用（複数ある場合は最後のものを採用するが、通常は1つのはず）
+                            if (mData[num] !== undefined) {
+                                match.ev = mData[num];
+                            }
+                        });
+                    }
                     return match;
                 }).filter(l => l.ev !== 0 || l.machine);
+
                 setLogs(results);
                 setSelectedId(report.ID);
             };
@@ -264,11 +292,18 @@
                 finally { setLoading(false); }
             };
 
+            const parseMemoDetails = (memo) => {
+                if (!memo) return { text: "", medal: 0, cash: 0 };
+                const m = memo.match(/^(.*)\n\[メダル:(-?\d+) \/ 現金:(-?\d+)\]/s);
+                if (m) {
+                    return { text: m[1], medal: parseInt(m[2]) || 0, cash: parseInt(m[3]) || 0 };
+                }
+                return { text: memo, medal: 0, cash: 0 };
+            };
+
             const parseProfit = (memo) => {
-                if (!memo) return 0;
-                const m = memo.match(/\[メダル:(-?\d+) \/ 現金:(-?\d+)\]/);
-                if (m) return (parseInt(m[1]) * 20) - parseInt(m[2]);
-                return 0;
+                const { medal, cash } = parseMemoDetails(memo);
+                return (medal * 20) - cash;
             };
 
             const selectedReport = reports.find(r => r.ID === selectedId);
@@ -308,6 +343,11 @@
                                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending</span>
                                 <span className="bg-indigo-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{reports.length}</span>
                             </div>
+                            {syncInfo.message && (
+                                <div className={`mb-4 p-2 rounded-lg text-[8px] font-black text-center border ${syncInfo.status === 'ERROR' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
+                                    {syncInfo.message}
+                                </div>
+                            )}
                             <button onClick={onDeleteSelected} disabled={selectedIds.length === 0} className={`w-full py-3 rounded-xl text-xs font-black transition-all ${selectedIds.length > 0 ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-800 text-slate-600 opacity-50'}`}>DELETE ({selectedIds.length})</button>
                         </div>
 
@@ -335,18 +375,58 @@
 
                     <div className="main custom-scroll overflow-y-auto">
                         {selectedReport ? (
-                            <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+                            <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn pb-20">
                                 <div className="bg-slate-900 rounded-[2rem] p-8 lg:p-12 text-white shadow-3xl relative overflow-hidden">
                                     <p className="text-xl lg:text-2xl font-bold whitespace-pre-wrap leading-tight mb-8 relative z-10">{selectedReport.稼働内容 || selectedReport.details}</p>
-                                    <div className="flex flex-wrap gap-x-8 gap-y-4 text-[10px] font-black text-slate-500 relative z-10 uppercase tracking-widest">
-                                        <div>User <span className="text-white ml-2">{selectedReport.報告者}</span></div>
-                                        <div>Store <span className="text-white ml-2">{selectedReport.店舗名}</span></div>
-                                        <div>Hours <span className="text-white ml-2">{selectedReport.稼働時間}h</span></div>
+
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 relative z-10 border-t border-white/10 pt-8 mt-4">
+                                        <div>
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Worker</div>
+                                            <div className="text-sm font-black">{selectedReport.報告者}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Store</div>
+                                            <div className="text-sm font-black">{selectedReport.店舗名}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Date</div>
+                                            <div className="text-sm font-black">{selectedReport.日付}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Hours</div>
+                                            <div className="text-sm font-black text-indigo-400">{selectedReport.稼働時間}h</div>
+                                        </div>
                                     </div>
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
                                 </div>
 
                                 <div className="bg-white rounded-[2rem] p-8 lg:p-12 shadow-2xl space-y-8 border border-slate-100">
+                                    {/* 収支・詳細セクション */}
+                                    <div className="grid lg:grid-cols-2 gap-8 pb-8 border-b border-slate-100">
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Financial Details</h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="bg-slate-50 p-4 rounded-2xl">
+                                                    <div className="text-[8px] font-black text-slate-400 uppercase mb-1">メダル (回収)</div>
+                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).medal.toLocaleString()} <span className="text-[10px] opacity-30">枚</span></div>
+                                                </div>
+                                                <div className="bg-slate-50 p-4 rounded-2xl">
+                                                    <div className="text-[8px] font-black text-slate-400 uppercase mb-1">現金 (投資)</div>
+                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).cash.toLocaleString()} <span className="text-[10px] opacity-30">円</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-900 p-4 rounded-2xl text-white">
+                                                <div className="text-[8px] font-black text-slate-400 uppercase mb-1">計算収支 (20円)</div>
+                                                <div className="text-xl font-black">{parseProfit(selectedReport.備考).toLocaleString()} 円</div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Memo / Note</h3>
+                                            <div className="bg-slate-50 p-5 rounded-2xl text-xs leading-relaxed text-slate-600 h-full min-h-[120px] whitespace-pre-wrap">
+                                                {parseMemoDetails(selectedReport.備考).text || "メモなし"}
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                                         <div>
                                             <h2 className="text-3xl font-black tracking-tighter text-slate-900">Analysis Results</h2>
