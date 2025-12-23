@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="robots" content="noindex,nofollow">
-    <title>管理者ダッシュボード | v7.7.4 SECURED</title>
+    <title>管理者ダッシュボード | v7.7.5 RESTORED</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -84,6 +84,17 @@
             border-radius: 10px;
         }
 
+        /* Disable Spin Buttons */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
         .input-ev {
             background: #f1f5f9;
             border: 2px solid transparent;
@@ -94,11 +105,12 @@
             text-align: center;
             color: #0076FF;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
         }
 
         .input-ev:focus {
             border-color: #0076FF;
+            background: #ffffff;
         }
 
         .modal-overlay {
@@ -124,18 +136,6 @@
                 opacity: 1;
                 transform: scale(1);
             }
-        }
-
-        .accent-blue {
-            color: #0076FF;
-        }
-
-        .bg-accent-blue {
-            background-color: #0076FF;
-        }
-
-        .border-accent-blue {
-            border-color: #0076FF;
         }
     </style>
 </head>
@@ -176,7 +176,7 @@
 
             const loadAll = async () => {
                 setLoading(true);
-                setSyncInfo({ status: "SYNCING", message: "同期中..." });
+                setSyncInfo({ status: "SYNCING", message: "データ取得中..." });
                 try {
                     const [repRes, dictRes] = await Promise.all([
                         fetch(`${GAS_URL}?action=getPendingReports`),
@@ -184,13 +184,14 @@
                     ]);
                     const repData = await repRes.json();
                     const dictData = await dictRes.json();
-                    setReports(repData);
+                    setReports(repData || []);
                     setDictionary(dictData.dictionary || []);
                     window.HOKUTO_MASTER = dictData.data;
-                    const sheetCount = Object.keys(dictData.data["設定１相当"]).length + Object.keys(dictData.data["優良店"]).length;
-                    setSyncInfo({ status: "SUCCESS", message: `完了: 報告${repData.length}件 / マスタ${sheetCount}件` });
+                    const sheet1Count = dictData.data["設定１相当"] ? Object.keys(dictData.data["設定１相当"]).length : 0;
+                    const sheet2Count = dictData.data["優良店"] ? Object.keys(dictData.data["優良店"]).length : 0;
+                    setSyncInfo({ status: "SUCCESS", message: `完了: 未承認 ${repData.length}件 / マスタ ${sheet1Count + sheet2Count}台` });
                 } catch (e) {
-                    console.error(e); setSyncInfo({ status: "ERROR", message: "同期失敗: " + e.message });
+                    console.error(e); setSyncInfo({ status: "ERROR", message: "通信エラー: " + e.message });
                 } finally { setLoading(false); }
             };
 
@@ -200,55 +201,54 @@
                 const lines = (report.稼働内容 || report.details || "").split("\n");
 
                 const results = lines.map(line => {
-                    let match = { text: line.trim(), ev: 0, machine: "", color: "bg-slate-400" };
                     if (!line.trim()) return null;
+                    let match = { text: line.trim(), ev: 0, machine: "", color: "bg-slate-400" };
 
-                    // 辞書から機種を特定
-                    let found = dictionary.find(d => {
-                        const keywords = (d.キーワード || "").split(",").map(k => k.trim()).filter(Boolean);
-                        return keywords.some(k => line.includes(k));
+                    // 1. 機種辞書引き
+                    let foundMachine = dictionary.find(d => {
+                        const kws = (d.キーワード || "").split(",").map(k => k.trim()).filter(Boolean);
+                        return kws.some(k => line.includes(k));
                     });
 
-                    if (found) {
-                        match.machine = found.機種名;
-                        match.color = found.色コード;
+                    if (foundMachine) {
+                        match.machine = foundMachine.機種名;
+                        match.color = foundMachine.色コード;
 
-                        // 期待値マスタから値を抽出 (柔軟な名称マッチング)
-                        let mData = master[found.機種名];
+                        // 2. 期待値マスタ照合 (完全一致 or 前後一致)
+                        let mData = master[foundMachine.機種名];
                         if (!mData) {
-                            // 部分一致でマスタを再検索
                             const masterKeys = Object.keys(master);
-                            const closestKey = masterKeys.find(k => k.includes(found.機種名) || found.機種名.includes(k));
-                            if (closestKey) mData = master[closestKey];
+                            const closest = masterKeys.find(k => k.includes(foundMachine.機種名) || foundMachine.機種名.includes(k));
+                            if (closest) mData = master[closest];
                         }
 
                         if (mData) {
                             const numbers = line.match(/\d+/g) || [];
-                            let bestEv = 0;
                             numbers.forEach(numStr => {
-                                const num = parseInt(numStr);
-                                if (mData[num] !== undefined) bestEv = mData[num];
+                                const val = parseInt(numStr);
+                                if (mData[val] !== undefined) match.ev = mData[val];
                             });
-                            match.ev = bestEv;
                         }
                     }
                     return match;
                 }).filter(Boolean);
-                setLogs(results); setSelectedId(report.ID);
+
+                setLogs(results);
+                setSelectedId(report.ID);
             };
 
             const parseMemoDetails = (memo) => {
-                const result = { text: memo || "", medal: 0, cash: 0 };
-                if (!memo) return result;
-
-                // 備考欄から財務タグを抽出（形式: [メダル:xxx / 現金:xxx]）
+                if (!memo) return { text: "", medal: 0, cash: 0 };
+                // 形式: [メダル:123 / 現金:456]
                 const m = memo.match(/\[メダル:(-?\d+)\s*\/\s*現金:(-?\d+)\]/);
                 if (m) {
-                    result.medal = parseInt(m[1]) || 0;
-                    result.cash = parseInt(m[2]) || 0;
-                    result.text = memo.replace(m[0], "").trim();
+                    return {
+                        text: memo.replace(m[0], "").trim(),
+                        medal: parseInt(m[1]) || 0,
+                        cash: parseInt(m[2]) || 0
+                    };
                 }
-                return result;
+                return { text: memo.trim(), medal: 0, cash: 0 };
             };
 
             const onApprove = async () => {
@@ -273,7 +273,7 @@
                 try {
                     setLoading(true);
                     await fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ action: "deleteReports", data: { ids: selectedIds } }) });
-                    setReports(reports.filter(r => !selectedIds.includes(r.ID))); setSelectedIds([]);
+                    setReports(reports.filter(r => !selectedIds.includes(r.ID))); setSelectedIds([]); setSelectedId(null);
                 } catch (e) { alert("Error: " + e.message); } finally { setLoading(false); }
             };
 
@@ -285,14 +285,11 @@
 
             if (isLocked) return (
                 <div className="flex items-center justify-center min-h-screen bg-slate-950 p-6">
-                    <div className="w-full max-w-sm space-y-8 animate-fadeIn">
-                        <div className="text-center">
-                            <h1 className="text-3xl font-black italic text-[#0076FF] tracking-tighter">ADMIN TERMINAL</h1>
-                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mt-2">Access Control Gate</p>
-                        </div>
-                        <form onSubmit={verifyPass} className="bg-slate-900 p-8 rounded-[2rem] border border-white/5 shadow-3xl space-y-6">
-                            <input type="password" value={passInput} onChange={e => setPassInput(e.target.value)} className="w-full bg-slate-800 border-none rounded-2xl py-4 px-6 text-white text-center font-black tracking-widest outline-none focus:ring-2 ring-[#0076FF]" placeholder="合言葉" autoFocus />
-                            <button type="submit" className="w-full bg-[#0076FF] hover:opacity-90 py-4 rounded-2xl text-white font-black transition-all shadow-xl font-black">AUTHENTICATE</button>
+                    <div className="w-full max-w-sm space-y-8 animate-fadeIn text-center">
+                        <h1 className="text-3xl font-black italic text-[#0076FF]">ADMIN TERMINAL</h1>
+                        <form onSubmit={verifyPass} className="bg-slate-900 p-8 rounded-[2rem] border border-white/5 space-y-6">
+                            <input type="password" value={passInput} onChange={e => setPassInput(e.target.value)} className="w-full bg-slate-800 border-none rounded-2xl py-4 px-6 text-white text-center font-black tracking-widest focus:ring-2 ring-[#0076FF]" placeholder="合言葉" autoFocus />
+                            <button type="submit" className="w-full bg-[#0076FF] py-4 rounded-2xl text-white font-black hover:opacity-90">AUTHENTICATE</button>
                         </form>
                     </div>
                 </div>
@@ -301,25 +298,23 @@
             return (
                 <div className="flex h-screen overflow-hidden">
                     <div className="mobile-header">
-                        <div className="text-xl font-black italic text-white">承認待ちリスト <span className="text-[#0076FF]">.</span></div>
+                        <div className="text-xl font-black italic text-white flex items-center gap-2">承認待ちリスト <span className="text-[#0076FF] px-2 py-0.5 rounded bg-white/5 text-xs">{reports.length}</span></div>
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-white p-2 text-2xl">☰</button>
                     </div>
 
                     <div className={`sidebar custom-scroll flex flex-col ${isSidebarOpen ? 'open' : ''}`}>
                         <div className="p-8 border-b border-white/5">
-                            <h1 className="text-2xl font-black text-white italic tracking-tighter">承認待ちリスト</h1>
-                            <p className="text-[10px] text-slate-500 font-black mt-2 uppercase tracking-widest">System Management</p>
+                            <h1 className="text-2xl font-black text-white italic">承認待ちリスト</h1>
+                            <p className="text-[10px] text-slate-500 font-black mt-2 uppercase tracking-widest opacity-50">System Console</p>
                         </div>
                         <div className="p-6 border-b border-white/5 bg-slate-900/50">
-                            <div className="flex justify-between items-center mb-4">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending</span>
-                                <span className="bg-[#0076FF] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{reports.length}</span>
+                            <div className="mb-4">
+                                {syncInfo.message && (
+                                    <div className={`p-2 rounded-lg text-[8px] font-black text-center border ${syncInfo.status === 'ERROR' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-[#0076FF22] border-[#0076FF44] text-[#0076FF]'}`}>
+                                        {syncInfo.message}
+                                    </div>
+                                )}
                             </div>
-                            {syncInfo.message && (
-                                <div className={`mb-4 p-2 rounded-lg text-[8px] font-black text-center border ${syncInfo.status === 'ERROR' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-[#0076FF11] border-[#0076FF33] text-[#0076FF]'}`}>
-                                    {syncInfo.message}
-                                </div>
-                            )}
                             <button onClick={onDeleteSelected} disabled={selectedIds.length === 0} className={`w-full py-3 rounded-xl text-xs font-black transition-all ${selectedIds.length > 0 ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-800 text-slate-600 opacity-50'}`}>DELETE ({selectedIds.length})</button>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scroll p-4 space-y-2">
@@ -328,8 +323,8 @@
                                     <div className="flex items-center gap-3">
                                         <input type="checkbox" checked={selectedIds.includes(r.ID)} onChange={() => setSelectedIds(prev => prev.includes(r.ID) ? prev.filter(i => i !== r.ID) : [...prev, r.ID])} onClick={e => e.stopPropagation()} className="w-4 h-4 rounded border-slate-700 bg-transparent text-[#0076FF]" />
                                         <div className="min-w-0 flex-1">
-                                            <div className="text-[9px] font-black opacity-50 uppercase">{r.日付} • {r.報告者}</div>
-                                            <div className={`font-black text-xs truncate ${selectedId === r.ID ? 'text-white' : 'text-slate-200'}`}>{r.店舗名}</div>
+                                            <div className="text-[9px] font-black opacity-40 uppercase">{r.日付} • {r.報告者}</div>
+                                            <div className="font-black text-xs truncate">{r.店舗名}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -364,24 +359,24 @@
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="bg-slate-50 p-4 rounded-2xl">
                                                     <div className="text-[8px] font-black text-slate-400 uppercase mb-1">メダル (回収)</div>
-                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).medal.toLocaleString()} <span className="text-xs opacity-30">枚</span></div>
+                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).medal.toLocaleString()} <span className="text-[10px] opacity-20">枚</span></div>
                                                 </div>
                                                 <div className="bg-slate-50 p-4 rounded-2xl">
                                                     <div className="text-[8px] font-black text-slate-400 uppercase mb-1">現金 (投資)</div>
-                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).cash.toLocaleString()} <span className="text-xs opacity-30">円</span></div>
+                                                    <div className="text-lg font-black text-slate-900">{parseMemoDetails(selectedReport.備考).cash.toLocaleString()} <span className="text-[10px] opacity-20">円</span></div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="space-y-4">
                                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Memo / Note</h3>
-                                            <div className="bg-slate-50 p-5 rounded-2xl text-xs leading-relaxed text-slate-600 min-h-[100px] whitespace-pre-wrap leading-relaxed">{parseMemoDetails(selectedReport.備考).text || "メモなし"}</div>
+                                            <div className="bg-slate-50 p-5 rounded-2xl text-xs text-slate-600 min-h-[100px] whitespace-pre-wrap leading-relaxed">{parseMemoDetails(selectedReport.備考).text || "メモなし"}</div>
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-between items-center pb-6 border-b border-slate-100">
+                                    <div className="flex justify-between items-center pb-6 border-b">
                                         <div>
                                             <h3 className="text-xl font-black italic">Analysis Results</h3>
-                                            <button onClick={addManualLog} className="mt-2 text-[9px] font-black bg-[#0076FF11] text-[#0076FF] px-3 py-1 rounded-full uppercase hover:bg-[#0076FF22] transition-colors tracking-tight">+ 手動で台を追加</button>
+                                            <button onClick={addManualLog} className="mt-2 text-[9px] font-black bg-[#0076FF11] text-[#0076FF] px-3 py-1 rounded-full uppercase hover:bg-[#0076FF22] transition-all">+ 台を手動追加</button>
                                         </div>
                                         <div className="flex bg-slate-100 p-1 rounded-xl">
                                             {["設定１相当", "優良店"].map(m => (
@@ -414,10 +409,10 @@
                                         ))}
                                     </div>
 
-                                    <div className="bg-[#0076FF] p-8 lg:p-12 rounded-[3rem] text-white flex flex-col lg:flex-row justify-between items-center gap-6 shadow-3xl">
+                                    <div className="bg-[#0076FF] p-8 lg:p-12 rounded-[3.5rem] text-white flex flex-col lg:flex-row justify-between items-center gap-6 shadow-3xl">
                                         <div className="text-center lg:text-left">
-                                            <div className="text-[9px] font-black opacity-40 mb-1 uppercase tracking-widest">Combined Total (EV)</div>
-                                            <div className="text-5xl font-black">{logs.reduce((s, l) => s + l.ev, 0).toLocaleString()} <span className="text-base opacity-30">円</span></div>
+                                            <div className="text-[9px] font-black opacity-50 mb-1 uppercase tracking-widest">Combined Total (EV)</div>
+                                            <div className="text-5xl font-black">{logs.reduce((s, l) => s + l.ev, 0).toLocaleString()} <span className="text-base opacity-40">円</span></div>
                                         </div>
                                         <button onClick={onApprove} className="w-full lg:w-auto bg-white text-[#0076FF] px-12 py-5 rounded-2xl font-black shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-widest text-xs">承認して完了</button>
                                     </div>
