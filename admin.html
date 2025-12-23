@@ -251,15 +251,15 @@
                 if (mData === undefined || mData === null) return 0;
                 const gKeys = Object.keys(mData).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
                 if (gKeys.length === 0) return 0;
-                
+
                 // 1G単位の線形補間ロジック
                 if (mData[val] !== undefined) return mData[val];
                 if (val <= gKeys[0]) return mData[gKeys[0]];
                 if (val >= gKeys[gKeys.length - 1]) return mData[gKeys[gKeys.length - 1]];
-                
+
                 const lower = [...gKeys].reverse().find(k => k <= val);
                 const upper = gKeys.find(k => k >= val);
-                
+
                 if (lower !== undefined && upper !== undefined) {
                     const lowEv = mData[lower];
                     const upEv = mData[upper];
@@ -324,15 +324,15 @@
                                 bestKey = matches[0].key;
                             }
                         }
-                        
+
                         // フォールバック: 0G付近の基本シート
                         if (!bestKey) {
                             bestKey = sheetNames.find(k => /0~|\+0|±0|0～/.test(normalize(k)));
                         }
 
-                        if (bestKey) { 
-                            match.source = bestKey; 
-                            match.ev = matchEvInRange(gCount, master[bestKey]); 
+                        if (bestKey && match.machine === "スマスロ北斗の拳") {
+                            match.source = bestKey;
+                            match.ev = matchEvInRange(gCount, master[bestKey]);
                         }
                     }
                     return match;
