@@ -221,6 +221,7 @@
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [showDebug, setShowDebug] = useState(false);
+            const [showAnalytics, setShowAnalytics] = useState(false); // 分析用
             const [syncInfo, setSyncInfo] = useState("");
             const [checkedIds, setCheckedIds] = useState([]); // 選択削除用
 
@@ -314,7 +315,7 @@
                     if (!line.trim()) return null;
                     let match = { text: line.trim(), ev: 0, machine: "", color: "bg-slate-400", source: "" };
                     const foundDict = dictionary.find(d => {
-                        const keywords = (d.キーワード || "").split(",").map(k => k.trim()).filter(Boolean);
+                        const keywords = (d.キーワード || "").split(/[,，、]/).map(k => k.trim()).filter(Boolean);
                         return keywords.some(k => line.includes(k));
                     });
                     if (foundDict) {
@@ -376,10 +377,12 @@
             const onApprove = async () => {
                 const report = reports.find(r => r.ID === selectedId);
                 const info = parseFinance(report);
+                const hours = parseFloat(getField(report, ["稼働時間", "hours", "メモ"])) || 0;
                 const payload = {
                     id: report.ID, date: report.日付, name: report.報告者, store: report.店舗名,
                     machine: logs.map(l => l.machine).filter(Boolean).join("/"),
-                    ev: logs.reduce((s, l) => s + l.ev, 0), profit: (info.medal * 20) - info.cash, memo: info.text
+                    ev: logs.reduce((s, l) => s + l.ev, 0), profit: (info.medal * 20) - info.cash,
+                    hours: hours, memo: info.text
                 };
                 setLoading(true);
                 try {
@@ -428,6 +431,7 @@
             return (
                 <div className="flex h-screen overflow-hidden">
                     {showSettings && <SettingsModal dictionary={dictionary} onSave={saveDict} onClose={() => setShowSettings(false)} />}
+                    {showAnalytics && <AnalyticsModal onClose={() => setShowAnalytics(false)} />}
 
                     <div className="mobile-header bg-slate-900 px-6 flex items-center justify-between lg:hidden text-white font-black italic">
                         <span>管理者アプリ</span>
@@ -467,6 +471,7 @@
                         </div>
                         <div className="p-6 border-t border-white/5 space-y-2">
                             <button onClick={loadAll} className="w-full bg-white/5 py-4 rounded-xl text-white text-[10px] font-black tracking-widest hover:bg-white/10">SYNC DATA</button>
+                            <button onClick={() => setShowAnalytics(true)} className="w-full bg-emerald-600 py-4 rounded-xl text-white text-[10px] font-black tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">📊 ANALYTICS (KPI分析)</button>
                             <button onClick={() => setShowDebug(!showDebug)} className={`w-full py-3 rounded-xl text-[10px] font-black ${showDebug ? 'bg-orange-600 text-white' : 'bg-white/5 text-white'}`}>DEBUG TOOL</button>
                         </div>
                     </div>
@@ -527,4 +532,42 @@
                                         {logs.map((log, i) => (
                                             <div key={i} className="bg-slate-50 p-7 lg:p-10 rounded-[2.5rem] border border-slate-100 flex flex-col lg:flex-row justify-between items-center gap-6 animate-fadeIn">
                                                 <div className="flex-1 space-y-2 w-full">
-       
+                                                    <div className="flex items-center gap-4">
+                                                        <span className={`text-[8px] font-black px-4 py-2 rounded-xl text-white shadow-sm shrink-0 ${log.color || 'bg-slate-400'}`}>{log.machine}</span>
+                                                        <span className="text-base font-black text-slate-800">{log.text}</span>
+                                                    </div>
+                                                    {log.source && log.machine.includes("北斗") && <div className="text-[9px] font-black text-[#0076FF] italic opacity-60 ml-2 uppercase">Sheet: {log.source}</div>}
+                                                </div>
+                                                <div className="flex items-center gap-4 shrink-0">
+                                                    <input type="number" inputMode="numeric" value={log.ev === 0 ? "" : log.ev} onChange={e => { const n = [...logs]; n[i].ev = parseInt(e.target.value) || 0; setLogs(n); }} className="input-ev" placeholder="0" />
+                                                    <button onClick={() => setLogs(logs.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-rose-500 text-2xl transition-colors shrink-0">✕</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="bg-[#0076FF] p-10 lg:p-14 rounded-[4rem] text-white flex flex-col lg:flex-row justify-between items-center gap-8 shadow-2xl">
+                                        <div className="text-center lg:text-left">
+                                            <div className="text-[10px] font-black opacity-50 mb-1 uppercase tracking-widest underline decoration-white/20 underline-offset-4">Aggregate Potential EV</div>
+                                            <div className="text-7xl font-black italic tracking-tighter">{logs.reduce((s, l) => s + l.ev, 0).toLocaleString()} <span className="text-xl font-bold opacity-30 ml-2">円</span></div>
+                                        </div>
+                                        <button onClick={onApprove} className="w-full lg:w-auto bg-white text-[#0076FF] px-16 py-6 rounded-[2.5rem] font-black shadow-xl hover:bg-slate-50 active:scale-95 transition-all text-xs tracking-widest uppercase">Approve & Complete</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-200 text-6xl lg:text-8xl font-black italic uppercase select-none opacity-60 text-center p-10">
+                                <div className="tracking-tighter">管理者アプリ</div>
+                                <div className="text-[11px] tracking-[1.5em] mt-8 opacity-70 font-black">Select Report to Start</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AdminApp />);
+    </script>
+</body>
+
+</html>
