@@ -124,10 +124,13 @@
             const [tempName, setTempName] = useState("");
             const [activeTab, setActiveTab] = useState("log");
             const [logs, setLogs] = useState([]);
+            const [strategies, setStrategies] = useState([]); // 攻略データ
+            const [search, setSearch] = useState(""); // 検索ワード
             const [logInput, setLogInput] = useState({ machine: "", detail: "" });
             const [reportInput, setReportInput] = useState({ store: "", hours: "", medal: "", cash: "", memo: "" });
             const [status, setStatus] = useState("");
             const [submitting, setSubmitting] = useState(false);
+            const [strategyLoading, setStrategyLoading] = useState(false);
 
             useEffect(() => {
                 const passVerified = localStorage.getItem("p_v7") === APP_PASS;
@@ -159,17 +162,30 @@
             const handleLogin = (e) => {
                 if (e) e.preventDefault();
                 if (!tempName.trim()) return alert("名前を入力してください");
+                if (!confirm(`名前を「${tempName.trim()}」で確定します。一度決めた名前は自分では変更できません（管理者への申請が必要）。よろしいですか？`)) return;
                 const u = { displayName: tempName.trim() };
                 setUser(u);
                 localStorage.setItem("u_v7", JSON.stringify(u));
             };
 
             const logout = () => {
-                if (confirm("名前を変更しますか？")) {
-                    setTempName(user.displayName);
-                    setUser(null);
-                    localStorage.removeItem("u_v7");
-                }
+                alert("セキュリティ保護のため、ログイン名の変更は禁止されています。変更が必要な場合は管理者に連絡してください。");
+            };
+
+            const fetchStrategy = async () => {
+                if (strategies.length > 0) return; // 取得済みならスキップ
+                setStrategyLoading(true);
+                try {
+                    const res = await fetch(`${GAS_URL}?action=getStrategyData&name=${encodeURIComponent(user.displayName)}`);
+                    const data = await res.json();
+                    if (data.status === "blocked") {
+                        alert("アクセス権限がありません。");
+                        setActiveTab("log");
+                    } else {
+                        setStrategies(data);
+                    }
+                } catch (e) { console.error(e); }
+                finally { setStrategyLoading(false); }
             };
 
             const parseHours = (raw) => {
@@ -285,7 +301,8 @@
                     <div className="flex border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-[57px] z-20">
                         <button onClick={() => setActiveTab("log")} className={`tab-btn ${activeTab === 'log' ? 'active' : ''}`}>01 LOGS</button>
                         <button onClick={() => setActiveTab("report")} className={`tab-btn ${activeTab === 'report' ? 'active' : ''}`}>02 REPORT</button>
-                        <button onClick={() => setActiveTab("help")} className={`tab-btn ${activeTab === 'help' ? 'active' : ''}`}>03 HELP</button>
+                        <button onClick={() => { setActiveTab("strategy"); fetchStrategy(); }} className={`tab-btn ${activeTab === 'strategy' ? 'active' : ''}`}>03 狙い目</button>
+                        <button onClick={() => setActiveTab("help")} className={`tab-btn ${activeTab === 'help' ? 'active' : ''}`}>04 HELP</button>
                     </div>
 
                     <div className="p-4 flex-1 space-y-5 pb-10">
@@ -361,6 +378,43 @@
                                 <button onClick={submit} disabled={submitting} className={`btn-premium shadow-lg ${submitting ? 'opacity-50' : ''}`}>
                                     {submitting ? 'SENDING...' : 'REPORT SUBMIT'}
                                 </button>
+                            </div>
+                        )}
+
+                        {activeTab === 'strategy' && (
+                            <div className="space-y-6 animate-fadeIn pb-10">
+                                <div className="card p-4 sticky top-[108px] z-10 bg-slate-800 shadow-xl border-indigo-500/20">
+                                    <input
+                                        type="text"
+                                        value={search}
+                                        onChange={e => setSearch(e.target.value)}
+                                        className="input-dark bg-slate-950 font-bold"
+                                        placeholder="機種名で検索..."
+                                    />
+                                </div>
+
+                                <div className="space-y-4">
+                                    {strategyLoading ? (
+                                        <div className="py-20 text-center text-indigo-400 font-black animate-pulse uppercase tracking-[0.2em] text-xs">Loading Strategy...</div>
+                                    ) : strategies.filter(s => s.機種名.toLowerCase().includes(search.toLowerCase())).length > 0 ? (
+                                        strategies.filter(s => s.機種名.toLowerCase().includes(search.toLowerCase())).map((s, i) => (
+                                            <div key={i} className="card p-5 space-y-3 bg-slate-800/50 border-white/5 hover:border-indigo-500/20 transition-all">
+                                                <div className="text-sm font-black text-indigo-100 flex justify-between items-center">
+                                                    {s.機種名}
+                                                    {s.URL && (
+                                                        <a href={s.URL} target="_blank" className="text-[9px] font-black bg-indigo-600 text-white px-3 py-1.5 rounded-full uppercase tracking-widest">解析サイト</a>
+                                                    )}
+                                                </div>
+                                                <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">{s.狙い目}</p>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="py-20 text-center">
+                                            <div className="text-4xl mb-4 opacity-20">🔍</div>
+                                            <p className="text-slate-500 font-black italic uppercase text-xs tracking-widest">No matching results</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
