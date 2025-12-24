@@ -396,8 +396,18 @@
                                 <div className="space-y-4">
                                     {strategyLoading ? (
                                         <div className="py-20 text-center text-indigo-400 font-black animate-pulse uppercase tracking-[0.2em] text-xs">Loading Strategy...</div>
-                                    ) : strategies.filter(s => s.機種名.toLowerCase().includes(search.toLowerCase())).length > 0 ? (
-                                        strategies.filter(s => s.機種名.toLowerCase().includes(search.toLowerCase())).map((s, i) => (
+                                    ) : strategies.filter(s => {
+                                        const term = search.toLowerCase();
+                                        const nameMatch = s.機種名.toLowerCase().includes(term);
+                                        const keywordMatch = (s.keywords || "").toLowerCase().split(/[,，、]/).some(k => k.trim().includes(term));
+                                        return nameMatch || keywordMatch;
+                                    }).length > 0 ? (
+                                        strategies.filter(s => {
+                                            const term = search.toLowerCase();
+                                            const nameMatch = s.機種名.toLowerCase().includes(term);
+                                            const keywordMatch = (s.keywords || "").toLowerCase().split(/[,，、]/).some(k => k.trim().includes(term));
+                                            return nameMatch || keywordMatch;
+                                        }).map((s, i) => (
                                             <div key={i} className="card p-5 space-y-3 bg-slate-800/50 border-white/5 hover:border-indigo-500/20 transition-all">
                                                 <div className="text-sm font-black text-indigo-100 flex justify-between items-center">
                                                     {s.機種名}
@@ -442,7 +452,7 @@
                                             </p>
                                             <p className="opacity-70 text-[11px] pl-7">
                                                 1日の稼働が終わったらここから報告を送信します。<br />
-                                                店舗名、稼働時間、最終枚数、投資金額を入力してください。メモ欄には、その日の気づきなどを自由に書いてOKです。入力後、一番下の「REPORT SUBMIT」を押せば完了です！
+                                                店舗名、稼働時間、最終枚数、残っている手持ちの投資用現金金額を入力してください。メモ欄には、その日の気づきなどを自由に書いてOKです。入力後、一番下の「REPORT SUBMIT」を押せば完了です！
                                             </p>
                                         </section>
 
