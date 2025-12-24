@@ -131,6 +131,9 @@
             const [status, setStatus] = useState("");
             const [submitting, setSubmitting] = useState(false);
             const [strategyLoading, setStrategyLoading] = useState(false);
+            const [myShifts, setMyShifts] = useState([]); // 自分のシフト
+            const [selectedDates, setSelectedDates] = useState([]); // 選択中の日付
+            const [shiftLoading, setShiftLoading] = useState(false);
 
             useEffect(() => {
                 const passVerified = localStorage.getItem("p_v7") === APP_PASS;
@@ -186,6 +189,35 @@
                     }
                 } catch (e) { console.error(e); }
                 finally { setStrategyLoading(false); }
+            };
+
+            const fetchShifts = async () => {
+                setShiftLoading(true);
+                try {
+                    const res = await fetch(`${GAS_URL}?action=getShifts&name=${encodeURIComponent(user.displayName)}`);
+                    const data = await res.json();
+                    setMyShifts(data);
+                } catch (e) { console.error(e); }
+                finally { setShiftLoading(false); }
+            };
+
+            const handleShiftSubmit = async () => {
+                if (selectedDates.length === 0) return alert("日付を選択してください");
+                setSubmitting(true);
+                try {
+                    await fetch(GAS_URL, {
+                        method: "POST", mode: "no-cors",
+                        body: JSON.stringify({ action: "submitShift", data: { name: user.displayName, dates: selectedDates } })
+                    });
+                    setSelectedDates([]);
+                    alert("シフトを申請しました。リストに反映されるまで数分かかる場合があります。");
+                    fetchShifts();
+                } catch (e) { alert(e.message); }
+                finally { setSubmitting(false); }
+            };
+
+            const toggleDate = (dateStr) => {
+                setSelectedDates(prev => prev.includes(dateStr) ? prev.filter(d => d !== dateStr) : [...prev, dateStr]);
             };
 
             const parseHours = (raw) => {
@@ -298,11 +330,12 @@
                         </div>
                     </div>
 
-                    <div className="flex border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-[57px] z-20">
+                    <div className="flex border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-[57px] z-20 overflow-x-auto whitespace-nowrap">
                         <button onClick={() => setActiveTab("log")} className={`tab-btn ${activeTab === 'log' ? 'active' : ''}`}>01 LOGS</button>
                         <button onClick={() => setActiveTab("report")} className={`tab-btn ${activeTab === 'report' ? 'active' : ''}`}>02 REPORT</button>
                         <button onClick={() => { setActiveTab("strategy"); fetchStrategy(); }} className={`tab-btn ${activeTab === 'strategy' ? 'active' : ''}`}>03 狙い目</button>
-                        <button onClick={() => setActiveTab("help")} className={`tab-btn ${activeTab === 'help' ? 'active' : ''}`}>04 HELP</button>
+                        <button onClick={() => { setActiveTab("shift"); fetchShifts(); }} className={`tab-btn ${activeTab === 'shift' ? 'active' : ''}`}>04 シフト</button>
+                        <button onClick={() => setActiveTab("help")} className={`tab-btn ${activeTab === 'help' ? 'active' : ''}`}>05 HELP</button>
                     </div>
 
                     <div className="p-4 flex-1 space-y-5 pb-10">
@@ -425,6 +458,46 @@
                                         </div>
                                     )}
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'shift' && (
+                            <div className="space-y-6 animate-fadeIn pb-10">
+                                <section className="card p-5 space-y-4">
+                                    <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest px-1">シフト申請（今後2週間分）</div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[...Array(14)].map((_, i) => {
+                                            const d = new Date(); d.setDate(d.getDate() + i);
+                                            const dStr = d.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' });
+                                            const iso = d.toISOString().split('T')[0];
+                                            const isSelected = selectedDates.includes(iso);
+                                            return (
+                                                <div key={i} onClick={() => toggleDate(iso)} className={`p-2 rounded-xl text-center cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-800 border-white/5 text-slate-400'}`}>
+                                                    <div className="text-[8px] font-bold opacity-60 leading-none mb-1">{dStr.split(' ')[1]}</div>
+                                                    <div className="text-xs font-black leading-none">{dStr.split('(')[0]}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <button onClick={handleShiftSubmit} disabled={submitting || selectedDates.length === 0} className={`btn-premium py-3 text-xs ${submitting || selectedDates.length === 0 ? 'opacity-30' : ''}`}>
+                                        {submitting ? 'SENDING...' : '選択した日付を申請'}
+                                    </button>
+                                </section>
+
+                                <section className="space-y-3">
+                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">確定済みシフト</div>
+                                    <div className="card p-4 space-y-2">
+                                        {shiftLoading ? <div className="text-center py-4 text-[10px] text-indigo-400 animate-pulse">読み込み中...</div> :
+                                            myShifts.length === 0 ? <div className="text-center py-8 text-slate-600 text-[10px] font-bold italic uppercase opacity-40">No confirmed shifts</div> :
+                                                myShifts.sort((a, b) => new Date(a.date) - new Date(b.date)).map((s, i) => (
+                                                    <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
+                                                        <div className="text-xs font-black text-white">{new Date(s.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'long' })}</div>
+                                                        <div className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md uppercase tracking-tighter">Confirmed</div>
+                                                    </div>
+                                                ))}
+                                    </div>
+                                </section>
+                                <p className="text-[10px] text-slate-500 italic text-center px-4 leading-relaxed">※入力したシフトは管理者のカレンダーに反映されます。<br />※一度申請した内容の変更は管理者に連絡してください。</p>
                             </div>
                         )}
 
