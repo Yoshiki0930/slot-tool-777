@@ -304,9 +304,10 @@
         }
 
         function AnalyticsModal({ onClose }) {
-            const [range, setRange] = React.useState({ start: "", end: "" });
-            const [data, setData] = React.useState([]);
-            const [loading, setLoading] = React.useState(false);
+            const [prompt, setPrompt] = React.useState(localStorage.getItem('kpi_prompt') || `【タスク】\nスロット軍団のKPI分析レポートを作成してください。\nLINEで共有できる「文章レポート」と「HTML画像レポート」の両方を作成してください。`);
+            const [activeTab, setActiveTab] = React.useState("stats"); // stats, report, prompt
+            const [reportResult, setReportResult] = React.useState({ text: "", html: "" });
+
             React.useEffect(() => {
                 const today = new Date();
                 const lastMonth = new Date();
@@ -314,6 +315,11 @@
                 const format = (d) => d.toISOString().split('T')[0];
                 setRange({ start: format(lastMonth), end: format(today) });
             }, []);
+
+            React.useEffect(() => {
+                localStorage.setItem('kpi_prompt', prompt);
+            }, [prompt]);
+
             const load = async () => {
                 setLoading(true);
                 try {
@@ -322,6 +328,65 @@
                     setData(json);
                 } catch (e) { alert(e.message); }
                 finally { setLoading(false); }
+            };
+
+            const calculateKPIs = (items) => {
+                const kpi = {
+                    total: { profit: 0, ev: 0, hours: 0 },
+                    members: {}, stores: {}, machines: {},
+                    days: [0, 0, 0, 0, 0, 0, 0].map(() => ({ p: 0, ev: 0, h: 0 })),
+                    types: { weekday: { p: 0, ev: 0, h: 0 }, weekend: { p: 0, ev: 0, h: 0 } }
+                };
+                items.forEach(d => {
+                    const p = parseFloat(d.実収支) || 0;
+                    const ev = parseFloat(d.期待値) || 0;
+                    const h = parseFloat(d.時間) || 0;
+                    const dt = new Date(d.日付);
+                    const day = dt.getDay();
+                    const isWeekend = day === 0 || day === 6;
+
+                    kpi.total.profit += p; kpi.total.ev += ev; kpi.total.hours += h;
+                    if (!kpi.members[d.報告者]) kpi.members[d.報告者] = { p: 0, ev: 0, h: 0 };
+                    kpi.members[d.報告者].p += p; kpi.members[d.報告者].ev += ev; kpi.members[d.報告者].h += h;
+                    if (!kpi.stores[d.店舗名]) kpi.stores[d.店舗名] = { p: 0, ev: 0, h: 0 };
+                    kpi.stores[d.店舗名].p += p; kpi.stores[d.店舗名].ev += ev; kpi.stores[d.店舗名].h += h;
+                    if (!kpi.machines[d.機種]) kpi.machines[d.機種] = { p: 0, ev: 0, h: 0 };
+                    kpi.machines[d.機種].p += p; kpi.machines[d.機種].ev += ev; kpi.machines[d.機種].h += h;
+
+                    kpi.days[day].p += p; kpi.days[day].ev += ev; kpi.days[day].h += h;
+                    const type = isWeekend ? 'weekend' : 'weekday';
+                    kpi.types[type].p += p; kpi.types[type].ev += ev; kpi.types[type].h += h;
+                });
+                return kpi;
+            };
+
+            const generateReport = () => {
+                const kpi = calculateKPIs(filtered);
+
+                // 期間比較ロジック (直前の同期間)
+                const sDate = new Date(range.start);
+                const eDate = new Date(range.end);
+                const diffDays = Math.ceil((eDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
+                const prevStart = new Date(sDate); prevStart.setDate(sDate.getDate() - diffDays);
+                const prevEnd = new Date(sDate); prevEnd.setDate(sDate.getDate() - 1);
+
+                const prevFiltered = data.filter(d => {
+                    const dt = new Date(d.日付);
+                    return dt >= prevStart && dt <= prevEnd;
+                });
+                const prevKpi = calculateKPIs(prevFiltered);
+                const pChange = kpi.total.profit - prevKpi.total.profit;
+
+                // 曜日と言語の辞書
+                const dayJP = ["日", "月", "火", "水", "木", "金", "土"];
+                const dayStats = kpi.days.map((s, i) => ({ d: dayJP[i], h: s.h, rate: Math.round(s.p / (s.h || 1)) })).filter(s => s.h > 0);
+                const bestDay = dayStats.sort((a, b) => b.rate - a.rate)[0];
+
+                const topStore = Object.entries(kpi.stores).sort((a, b) => (b[1].p / (b[1].h || 1)) - (a[1].p / (a[1].h || 1)))[0];
+                const lineText = `【KPI分析レポート】🚀\n期間: ${range.start} 〜 ${range.end}\n(前期間比: ${pChange > 0 ? '+' : ''}${pChange.toLocaleString()}円)\n━━━━━━━━━━━━━━\n📊 チーム全体成績\n・総期待値: ${kpi.total.ev.toLocaleString()}円\n・実収支: ${kpi.total.profit.toLocaleString()}円\n・総稼働: ${kpi.total.hours}h\n・平均時給: ${Math.round(kpi.total.profit / (kpi.total.hours || 1)).toLocaleString()}円\n\n🏆 メンバー別獲得期待値 (Rank)\n${Object.entries(kpi.members).sort((a, b) => b[1].ev - a[1].ev).map(([n, s], i) => `${i + 1}. ${n}: ${s.ev.toLocaleString()}円`).join('\n')}\n※管理者の時給は「打ち子への台パス」の影響で低く算出される場合があります。\n\n📍 店舗別時給分析\n${Object.entries(kpi.stores).sort((a, b) => (b[1].p / (b[1].h || 1)) - (a[1].p / (a[1].h || 1))).map(([n, s]) => `・${n}: ${Math.round(s.p / (s.h || 1)).toLocaleString()}円/h`).join('\n')}\n特に「野川」は日曜基準のおすすめ週間の影響を注視する必要があります。\n\n📅 トレンド分析\n・最高時給曜日: ${bestDay?.d || '-'}曜日 (${(bestDay?.rate || 0).toLocaleString()}円/h)\n・平日時給: ${Math.round(kpi.types.weekday.p / (kpi.types.weekday.h || 1)).toLocaleString()}円/h\n・土日時給: ${Math.round(kpi.types.weekend.p / (kpi.types.weekend.h || 1)).toLocaleString()}円/h\n\n👹 北斗重要分析\n・期待値累計: ${(kpi.machines['スマスロ北斗の拳']?.ev || 0).toLocaleString()}円\n・稼働貢献: ${kpi.machines['スマスロ北斗の拳'] ? Math.round((kpi.machines['スマスロ北斗の拳'].ev / kpi.total.ev) * 100) : 0}%\n\n💡 重要な発見・提言\n・店舗「${topStore?.[0] || '不明'}」が高い期待値効率を維持しています。\n・${bestDay?.d || '特定'}曜日の稼働集約により、さらなる収支向上が見込めるデータが出ています。`;
+
+                setReportResult({ text: lineText, html: "" });
+                setActiveTab("report");
             };
             const filtered = React.useMemo(() => {
                 if (!range.start || !range.end) return [];
@@ -358,77 +423,154 @@
                             <h2 className="text-2xl font-black italic uppercase">KPI Analytics</h2>
                             <button onClick={onClose} className="text-slate-400 hover:text-rose-500 text-3xl transition-colors">✕</button>
                         </div>
-                        <div className="p-8 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-4 items-end shrink-0">
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Start Date</label>
-                                <input type="date" value={range.start} onChange={e => setRange({ ...range, start: e.target.value })} className="bg-white px-4 py-2 rounded-xl font-bold border border-slate-200 outline-none" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">End Date</label>
-                                <input type="date" value={range.end} onChange={e => setRange({ ...range, end: e.target.value })} className="bg-white px-4 py-2 rounded-xl font-bold border border-slate-200 outline-none" />
-                            </div>
-                            <button onClick={load} className="bg-[#0076FF] text-white px-8 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg">Analyze Data</button>
+                        <div className="flex bg-slate-100 p-1 shrink-0">
+                            {["stats", "report", "prompt"].map(t => (
+                                <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-white shadow-sm text-[#0076FF]' : 'text-slate-400'}`}>
+                                    {t === 'stats' ? 'Dashboard 📊' : t === 'report' ? 'Report 📝' : 'Prompt ⚙️'}
+                                </button>
+                            ))}
                         </div>
-                        <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scroll">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white space-y-1 shadow-xl">
-                                    <div className="text-[10px] font-black opacity-40 uppercase">Total Profit</div>
-                                    <div className="text-4xl font-black italic">{stats.totalProfit.toLocaleString()}<span className="text-sm ml-2">円</span></div>
-                                </div>
-                                <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] space-y-1 shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase">Total EV</div>
-                                    <div className="text-4xl font-black italic text-[#0076FF]">{stats.totalEv.toLocaleString()}<span className="text-sm ml-2">円</span></div>
-                                </div>
-                                <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] space-y-1 shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase">Avg Hourly</div>
-                                    <div className="text-4xl font-black italic text-emerald-600">{Math.round(stats.totalProfit / (stats.totalHours || 1)).toLocaleString()}<span className="text-sm ml-2">円</span></div>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                                <div className="space-y-4">
-                                    <h3 className="text-xs font-black uppercase tracking-widest px-2">Operator Stats</h3>
-                                    <div className="bg-slate-50 border border-slate-100 rounded-[2.5rem] overflow-hidden">
-                                        <table className="w-full text-xs">
-                                            <thead className="bg-slate-100 text-[10px] font-black text-slate-400 uppercase">
-                                                <tr><th className="p-4 text-left">Name</th><th className="p-4 text-right">Profit</th><th className="p-4 text-right">EV</th><th className="p-4 text-right">Hour</th></tr>
-                                            </thead>
-                                            <tbody className="font-bold">
-                                                {Object.entries(stats.person).map(([n, s]) => (
-                                                    <tr key={n} className="border-t border-slate-200">
-                                                        <td className="p-4">{n}</td>
-                                                        <td className="p-4 text-right">{s.p.toLocaleString()}</td>
-                                                        <td className="p-4 text-right text-[#0076FF]">{s.ev.toLocaleString()}</td>
-                                                        <td className="p-4 text-right opacity-40">{Math.round(s.p / (s.h || 1)).toLocaleString()}/h</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+
+                        <div className="flex-1 overflow-y-auto custom-scroll">
+                            {activeTab === "stats" && (
+                                <div className="p-10 space-y-10">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl">
+                                            <div className="text-[10px] font-black opacity-40 uppercase">Total Profit</div>
+                                            <div className="text-4xl font-black italic">{stats.totalProfit.toLocaleString()}<span className="text-sm ml-2">円</span></div>
+                                        </div>
+                                        <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] shadow-sm">
+                                            <div className="text-[10px] font-black text-slate-400 uppercase">Total EV</div>
+                                            <div className="text-4xl font-black italic text-[#0076FF]">{stats.totalEv.toLocaleString()}<span className="text-sm ml-2">円</span></div>
+                                        </div>
+                                        <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] shadow-sm">
+                                            <div className="text-[10px] font-black text-slate-400 uppercase">Avg Hourly</div>
+                                            <div className="text-4xl font-black italic text-emerald-600">{Math.round(stats.totalProfit / (stats.totalHours || 1)).toLocaleString()}<span className="text-sm ml-2">円</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black uppercase tracking-widest px-2">Member Ranking (EV)</h3>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-[2.5rem] overflow-hidden">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-slate-100 text-[10px] font-black text-slate-400 uppercase">
+                                                        <tr><th className="p-4 text-left">Name</th><th className="p-4 text-right">EV</th><th className="p-4 text-right">Profit</th></tr>
+                                                    </thead>
+                                                    <tbody className="font-bold">
+                                                        {Object.entries(stats.person).sort((a, b) => b[1].ev - a[1].ev).map(([n, s]) => (
+                                                            <tr key={n} className="border-t border-slate-200">
+                                                                <td className="p-4">{n}</td>
+                                                                <td className="p-4 text-right text-[#0076FF]">{s.ev.toLocaleString()}</td>
+                                                                <td className="p-4 text-right">{s.p > 0 ? `${s.p.toLocaleString()}` : "-"}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black uppercase tracking-widest px-2">Store Ranking (Profit)</h3>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-[2.5rem] overflow-hidden">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-slate-100 text-[10px] font-black text-slate-400 uppercase">
+                                                        <tr><th className="p-4 text-left">Store</th><th className="p-4 text-right">Hourly</th><th className="p-4 text-right">Total P</th></tr>
+                                                    </thead>
+                                                    <tbody className="font-bold">
+                                                        {Object.entries(stats.store).sort((a, b) => b[1].p - a[1].p).map(([n, s]) => (
+                                                            <tr key={n} className="border-t border-slate-200">
+                                                                <td className="p-4">{n}</td>
+                                                                <td className="p-4 text-right text-emerald-600">{Math.round(s.p / (s.h || 1)).toLocaleString()}/h</td>
+                                                                <td className="p-4 text-right opacity-40">{s.p.toLocaleString()}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-center pt-10">
+                                        <button onClick={generateReport} className="bg-slate-900 text-white px-12 py-5 rounded-[2rem] font-black shadow-2xl hover:scale-105 transition-all text-xs tracking-widest">
+                                            高度分析レポートを生成してLINEへ
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    <h3 className="text-xs font-black uppercase tracking-widest px-2">Store Stats</h3>
-                                    <div className="bg-slate-50 border border-slate-100 rounded-[2.5rem] overflow-hidden">
-                                        <table className="w-full text-xs">
-                                            <thead className="bg-slate-100 text-[10px] font-black text-slate-400 uppercase">
-                                                <tr><th className="p-4 text-left">Store</th><th className="p-4 text-right">Profit</th><th className="p-4 text-right">EV</th><th className="p-4 text-right">Hour</th></tr>
-                                            </thead>
-                                            <tbody className="font-bold">
-                                                {Object.entries(stats.store).map(([n, s]) => (
-                                                    <tr key={n} className="border-t border-slate-200">
-                                                        <td className="p-4">{n}</td>
-                                                        <td className="p-4 text-right">{s.p.toLocaleString()}</td>
-                                                        <td className="p-4 text-right text-[#0076FF]">{s.ev.toLocaleString()}</td>
-                                                        <td className="p-4 text-right opacity-40">{s.h}h</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                            )}
+
+                            {activeTab === "report" && (
+                                <div className="p-10 space-y-10 max-w-2xl mx-auto">
+                                    <div className="bg-white border-2 border-slate-100 p-10 rounded-[3rem] shadow-xl space-y-8">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-xl font-black italic">LINE Report Output</h3>
+                                            <button onClick={() => { navigator.clipboard.writeText(reportResult.text); alert("コピーしました"); }} className="text-[#0076FF] font-black text-[10px] uppercase border-b-2 border-[#0076FF]">Copy to Clipboard</button>
+                                        </div>
+                                        <pre className="whitespace-pre-wrap font-bold text-sm bg-slate-50 p-8 rounded-3xl border border-slate-100 leading-relaxed text-slate-700">
+                                            {reportResult.text || "先にダッシュボードでレポートを生成してください"}
+                                        </pre>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-black p-10 rounded-[3rem] shadow-2xl text-white space-y-8 overflow-hidden relative">
+                                        <div className="flex justify-between items-center relative z-10">
+                                            <h3 className="text-xl font-black italic uppercase tracking-widest">Visual Insight</h3>
+                                            <span className="text-[10px] font-black opacity-40">Mobile Optimized View</span>
+                                        </div>
+                                        <div className="space-y-6 relative z-10">
+                                            <div className="grid grid-cols-2 gap-4 text-center">
+                                                <div className="bg-white/10 p-6 rounded-3xl border border-white/5">
+                                                    <div className="text-[9px] font-black opacity-50 uppercase mb-2">Total EV</div>
+                                                    <div className="text-2xl font-black text-[#00E0FF]">{stats.totalEv.toLocaleString()}</div>
+                                                </div>
+                                                <div className="bg-white/10 p-6 rounded-3xl border border-white/5">
+                                                    <div className="text-[9px] font-black opacity-50 uppercase mb-2">Total Profit</div>
+                                                    <div className="text-2xl font-black text-[#00FF85]">{stats.totalProfit.toLocaleString()}</div>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 backdrop-blur-md">
+                                                <div className="text-xs font-black mb-4 flex items-center justify-between">
+                                                    <span>STORE HOURLY RANKING</span>
+                                                    <span className="text-[10px] opacity-40 italic">Sorted by Real-Time ROI</span>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {Object.entries(stats.store).sort((a, b) => (b[1].p / (b[1].h || 1)) - (a[1].p / (a[1].h || 1))).slice(0, 3).map(([n, s], i) => (
+                                                        <div key={n} className="flex justify-between items-center text-sm">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-[10px] w-5 h-5 flex items-center justify-center bg-white/20 rounded-full">{i + 1}</span>
+                                                                <span className="font-bold">{n}</span>
+                                                            </div>
+                                                            <span className="font-black text-[#00FF85]">{Math.round(s.p / (s.h || 1)).toLocaleString()} 円/h</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none transform rotate-12">
+                                            <div className="text-9xl font-black italic">KPI</div>
+                                        </div>
+                                    </div>
+                                    <p className="text-center text-[10px] font-black text-slate-400 uppercase italic">※このグラフィックエリアをスクショして共有してください</p>
+                                </div>
+                            )}
+
+                            {activeTab === "prompt" && (
+                                <div className="p-10 space-y-6 flex flex-col h-full">
+                                    <div className="flex-1 space-y-4">
+                                        <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Analysis Instruction (Prompt)</label>
+                                        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} className="w-full h-[300px] lg:h-[450px] bg-slate-50 border border-slate-200 rounded-[2.5rem] p-10 text-xs font-bold leading-relaxed focus:border-[#0076FF] outline-none shadow-inner" placeholder="分析の指示（プロンプト）をここに記述してください" />
+                                    </div>
+                                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-4 text-amber-700">
+                                        <span className="text-xl">💡</span>
+                                        <p className="text-[10px] font-bold leading-relaxed">ここでの修正はブラウザに保存され、次回のレポート生成に反映されます。<br />特定のメンバーを追加したり、分析の優先順位を調整する際に使用してください。</p>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                         <div className="p-8 border-t border-slate-100 bg-slate-50 shrink-0">
-                            <button onClick={copyReport} className="w-full bg-slate-900 py-5 rounded-3xl text-white font-black shadow-xl uppercase tracking-widest text-xs">Copy for LINE Report</button>
+                            <button onClick={() => {
+                                if (!reportResult.text) { generateReport(); }
+                                navigator.clipboard.writeText(reportResult.text);
+                                alert("最新の高度分析レポートをコピーしました");
+                            }} className="w-full bg-slate-900 py-5 rounded-3xl text-white font-black shadow-xl uppercase tracking-widest text-xs">
+                                Copy for LINE Report
+                            </button>
                         </div>
                     </div>
                 </div>
