@@ -161,9 +161,9 @@
                         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                             <div className="flex gap-6 items-baseline">
                                 <h2 className="text-2xl font-black italic text-slate-900 uppercase">Master Console 📖</h2>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setTab("dict")} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${tab === 'dict' ? 'bg-[#0076FF] text-white' : 'bg-slate-200 text-slate-500'}`}>機種辞書</button>
-                                    <button onClick={() => setTab("strategy")} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${tab === 'strategy' ? 'bg-[#0076FF] text-white' : 'bg-slate-200 text-slate-500'}`}>狙い目（攻略）</button>
+                                <div className="flex gap-2 bg-slate-200 p-1 rounded-full">
+                                    <button onClick={() => setTab("dict")} className={`px-6 py-2 rounded-full text-[10px] font-black transition-all ${tab === 'dict' ? 'bg-[#0076FF] text-white' : 'text-slate-500 hover:text-slate-700'}`}>機種辞書</button>
+                                    <button onClick={() => setTab("strategy")} className={`px-6 py-2 rounded-full text-[10px] font-black transition-all ${tab === 'strategy' ? 'bg-[#0076FF] text-white' : 'text-slate-500 hover:text-slate-700'}`}>狙い目（攻略）</button>
                                 </div>
                             </div>
                             <button onClick={onClose} className="text-slate-400 hover:text-rose-500 text-3xl transition-colors">✕</button>
@@ -173,14 +173,25 @@
                                 <div className="space-y-4">
                                     <button onClick={() => setDictItems([{ 機種名: "", キーワード: "", 色コード: "bg-slate-400" }, ...dictItems])} className="w-full py-4 border-2 border-dashed border-[#0076FF] text-[#0076FF] font-black rounded-2xl mb-4">+ 新機辞書キーワードを追加</button>
                                     {dictItems.map((it, i) => (
-                                        <div key={i} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex gap-4 items-center group">
-                                            <input value={it.機種名} onChange={e => { const n = [...dictItems]; n[i].機種名 = e.target.value; setDictItems(n); }} className="w-48 bg-white px-4 py-3 rounded-xl font-black text-sm outline-none border border-slate-200" placeholder="機種名" />
-                                            <input value={it.キーワード} onChange={e => { const n = [...dictItems]; n[i].キーワード = e.target.value; setDictItems(n); }} className="flex-1 bg-white px-4 py-3 rounded-xl text-xs font-bold outline-none border border-slate-200" placeholder="キーワード (カンマ区切り)" />
-                                            <select value={it.色コード} onChange={e => { const n = [...dictItems]; n[i].色コード = e.target.value; setDictItems(n); }} className="w-32 bg-white px-4 py-3 rounded-xl text-[10px] font-black border border-slate-200">
-                                                <option value="bg-indigo-600">INDIGO</option><option value="bg-rose-600">ROSE</option><option value="bg-emerald-600">EMERALD</option>
-                                                <option value="bg-orange-500">ORANGE</option><option value="bg-blue-600">BLUE</option><option value="bg-slate-400">SLATE</option>
-                                            </select>
-                                            <button onClick={() => setDictItems(dictItems.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-rose-500 font-black">✕</button>
+                                        <div key={i} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4 relative group">
+                                            <div className="flex flex-col md:flex-row gap-4">
+                                                <div className="flex-1">
+                                                    <label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1 block">機種名</label>
+                                                    <input value={it.機種名} onChange={e => { const n = [...dictItems]; n[i].機種名 = e.target.value; setDictItems(n); }} className="w-full bg-white px-4 py-3 rounded-xl font-black text-sm outline-none border border-slate-200" placeholder="機種名" />
+                                                </div>
+                                                <div className="w-full md:w-40">
+                                                    <label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1 block">色コード</label>
+                                                    <select value={it.色コード} onChange={e => { const n = [...dictItems]; n[i].色コード = e.target.value; setDictItems(n); }} className="w-full bg-white px-4 py-3 rounded-xl text-[10px] font-black border border-slate-200">
+                                                        <option value="bg-indigo-600">INDIGO</option><option value="bg-rose-600">ROSE</option><option value="bg-emerald-600">EMERALD</option>
+                                                        <option value="bg-orange-500">ORANGE</option><option value="bg-blue-600">BLUE</option><option value="bg-slate-400">SLATE</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1 block">キーワード (カンマ区切り)</label>
+                                                <input value={it.キーワード} onChange={e => { const n = [...dictItems]; n[i].キーワード = e.target.value; setDictItems(n); }} className="w-full bg-white px-4 py-3 rounded-xl text-xs font-bold outline-none border border-slate-200" placeholder="例: 北斗,ほくと,拳" />
+                                            </div>
+                                            <button onClick={() => setDictItems(dictItems.filter((_, idx) => idx !== i))} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 font-black text-xl">✕</button>
                                         </div>
                                     ))}
                                 </div>
@@ -242,9 +253,9 @@
                         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                             <div className="flex gap-6 items-baseline">
                                 <h2 className="text-2xl font-black italic text-slate-900 uppercase">Security Hub 🛡</h2>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setTab("logs")} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${tab === 'logs' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-500'}`}>アクセス履歴</button>
-                                    <button onClick={() => setTab("ban")} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${tab === 'ban' ? 'bg-rose-600 text-white' : 'bg-slate-200 text-slate-500'}`}>出禁管理</button>
+                                <div className="flex gap-2 bg-slate-200 p-1 rounded-full">
+                                    <button onClick={() => setTab("logs")} className={`flex-1 px-4 py-2 rounded-full text-[10px] font-black transition-all ${tab === 'logs' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-700'}`}>履歴</button>
+                                    <button onClick={() => setTab("ban")} className={`flex-1 px-4 py-2 rounded-full text-[10px] font-black transition-all ${tab === 'ban' ? 'bg-rose-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>出禁</button>
                                 </div>
                             </div>
                             <button onClick={onClose} className="text-slate-400 hover:text-rose-500 text-3xl transition-colors">✕</button>
@@ -520,42 +531,61 @@
                         });
                         if (foundDict) {
                             match.machine = foundDict.機種名; match.color = foundDict.色コード;
-                            const numbers = (line.match(/-?\d+/g) || []).map(Number);
+                            const allNums = (line.match(/-?\d+/g) || []).map(Number);
+                            const gMatch = line.match(/(\d+)\s*[Gg]/);
+                            const sMatch = line.match(/([+-]?\d+)\s*[枚枚]/);
                             const isReset = /リセ|リセット|設定変更|変更後/.test(line);
-                            const gCount = numbers[0] || 0;
-                            const diff = numbers[1] || 0;
+
+                            let gCount = 0;
+                            let diff = 0;
+
+                            if (gMatch) {
+                                gCount = parseInt(gMatch[1]);
+                                if (sMatch) {
+                                    diff = parseInt(sMatch[1]);
+                                } else {
+                                    diff = allNums.find(n => n !== gCount) || 0;
+                                }
+                            } else if (sMatch) {
+                                diff = parseInt(sMatch[1]);
+                                gCount = allNums.find(n => n !== diff) || 0;
+                            } else {
+                                gCount = allNums[0] || 0;
+                                diff = allNums[1] || 0;
+                            }
+
                             if (match.machine === "スマスロ北斗の拳") {
                                 const sheets = Object.keys(master);
                                 let selected = "";
                                 if (isReset) {
                                     selected = sheets.find(s => s.includes("変更") || s.includes("リセ"));
                                 } else {
-                                    let targetRange = "";
-                                    if (diff < -1400) targetRange = "-1400未満";
-                                    else if (diff <= -1001) targetRange = "-1400～-1001";
-                                    else if (diff <= -601) targetRange = "-1000～-601";
-                                    else if (diff <= -401) targetRange = "-600～-401";
-                                    else if (diff <= -301) targetRange = "-400～-301";
-                                    else if (diff <= -201) targetRange = "-300～-201";
-                                    else if (diff <= -101) targetRange = "-200～-101";
-                                    else if (diff <= -1) targetRange = "-100～-1";
-                                    else if (diff <= 99) targetRange = "0～+99";
-                                    else if (diff <= 199) targetRange = "+100～+199";
-                                    else if (diff <= 299) targetRange = "+200～+299";
-                                    else if (diff <= 399) targetRange = "+300～+399";
-                                    else if (diff <= 599) targetRange = "+400～+599";
-                                    else if (diff <= 799) targetRange = "+600～+799";
-                                    else if (diff <= 999) targetRange = "+800～+999";
-                                    else if (diff <= 1199) targetRange = "+1000～+1199";
-                                    else if (diff <= 1399) targetRange = "+1200～+1399";
-                                    else if (diff <= 1999) targetRange = "+1400～+1999";
-                                    else targetRange = "+2000以上";
+                                    let rangeName = "";
+                                    if (diff < -1400) rangeName = "-1400未満";
+                                    else if (diff <= -1001) rangeName = "-1400～-1001";
+                                    else if (diff <= -601) rangeName = "-1000～-601";
+                                    else if (diff <= -401) rangeName = "-600～-401";
+                                    else if (diff <= -301) rangeName = "-400～-301";
+                                    else if (diff <= -201) rangeName = "-300～-201";
+                                    else if (diff <= -101) rangeName = "-200～-101";
+                                    else if (diff <= -1) rangeName = "-100～-1";
+                                    else if (diff <= 99) rangeName = "±0～+99";
+                                    else if (diff <= 199) rangeName = "+100～+199";
+                                    else if (diff <= 299) rangeName = "+200～+299";
+                                    else if (diff <= 399) rangeName = "+300～+399";
+                                    else if (diff <= 599) rangeName = "+400～+599";
+                                    else if (diff <= 799) rangeName = "+600～+799";
+                                    else if (diff <= 999) rangeName = "+800～+999";
+                                    else if (diff <= 1199) rangeName = "+1000～+1199";
+                                    else if (diff <= 1399) rangeName = "+1200～+1399";
+                                    else if (diff <= 1999) rangeName = "+1400～+1999";
+                                    else rangeName = "+2000以上";
 
                                     const normalize = (k) => k.replace(/[±枚（）()\[\]\s　]/g, "").replace(/[〜〜~]/g, "～").trim();
-                                    const normalizedTarget = normalize(targetRange);
-                                    selected = sheets.find(s => normalize(s) === normalizedTarget);
+                                    const normTarget = normalize(rangeName);
+                                    selected = sheets.find(sh => normalize(sh) === normTarget);
                                     if (!selected && diff >= 0 && diff <= 99) {
-                                        selected = sheets.find(s => s.includes("通常") || s.includes("基本") || s.includes("0～+99"));
+                                        selected = sheets.find(sh => sh.includes("通常") || sh.includes("基本"));
                                     }
                                 }
                                 if (selected) {
@@ -573,7 +603,7 @@
                         ID: report.ID, 報告者: report.報告者, 店舗名: getField(report, ["店舗名", "store"]), 日付: report.日付,
                         稼働時間: getField(report, ["稼働時間", "hours", "時間", "TIME (H)", "time"]),
                         最終メダル枚数: getField(report, ["最終メダル枚数", "medal", "枚数"]) || fin.medal,
-                        本日投資: getField(report, ["本日投資", "cash", "投資"]) || fin.cash,
+                        本日投資: getField(report, ["本日投資", "cash", "投資", "本日投資額"]) || fin.cash,
                         備考: getField(report, ["備考", "memo", "備考欄"]) || fin.text,
                         details: getField(report, ["稼働内容", "details", "内容"])
                     });
