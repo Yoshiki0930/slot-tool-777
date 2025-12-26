@@ -548,7 +548,9 @@
 
                         if (foundDict) {
                             match.machine = foundDict.機種名; match.color = foundDict.色コード;
+                            // 数値を抽出（ゲーム数想定）
                             const numbers = (line.match(/\d+/g) || []).map(Number);
+                            // リセット判定：単語として「リセ」や「設定変更」が含まれるか
                             const isReset = /リセ|リセット|設定変更|変更後/.test(line);
                             let gCount = numbers[0] || 0;
 
@@ -556,10 +558,21 @@
                                 const sheets = Object.keys(master);
                                 let selected = "";
                                 if (isReset) {
+                                    // リセット時は「リセ」「変更」を含むシートを探す
                                     selected = sheets.find(k => k.includes("リセ") || k.includes("設定変更") || k.includes("変更後"));
                                 } else {
-                                    selected = sheets.find(k => k.includes("通常") || k.includes("基本") || k.includes("0~") || k.includes("±0")) || sheets[0];
+                                    // 【最重要】非リセット時は「変更」という文字を含まないシートを優先
+                                    // 通常、基本、0~、±0、〜 などのキーワードを含み、かつ「変更」を含まないものを検索
+                                    selected = sheets.find(k => (k.includes("通常") || k.includes("基本") || k.includes("0~") || k.includes("±0") || k.includes("〜")) && !k.includes("変更"));
+
+                                    // 見つからない場合は、とにかく「変更」が含まれない最初のシートを採用
+                                    if (!selected) {
+                                        selected = sheets.find(k => !k.includes("変更"));
+                                    }
                                 }
+                                // 最終バックアップ：どうしても決まらなければ最初のシート
+                                if (!selected) selected = sheets[0];
+
                                 if (selected) {
                                     match.source = selected;
                                     match.ev = matchEvInRange(gCount, master[selected]);
