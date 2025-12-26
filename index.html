@@ -232,11 +232,11 @@
 
             const parseHours = (raw) => {
                 if (!raw) return 0;
-                if (raw.includes("~") || raw.includes("-") || raw.includes("〜")) {
-                    const parts = raw.split(/[~-〜]/);
+                if (raw.includes("~") || raw.includes("-") || raw.includes("〜") || raw.includes("～")) {
+                    const parts = raw.split(/[~～〜\-]/);
                     const toMin = (s) => {
                         if (!s) return 0;
-                        const [h, m] = s.trim().split(":").map(Number);
+                        const [h, m] = s.trim().replace(/[：]/g, ":").split(":").map(Number);
                         return (h || 0) * 60 + (m || 0);
                     };
                     if (parts.length === 2) {
