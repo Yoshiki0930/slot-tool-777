@@ -743,15 +743,11 @@
                                 <div className="bg-slate-900 rounded-[2.5rem] p-10 lg:p-14 text-white shadow-xl relative overflow-hidden">
                                     <div className="flex flex-col gap-8">
                                         <div>
-                                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">打った台リスト</div>
-                                            <div className="flex flex-wrap gap-3">
-                                                {[...new Set(logs.map(l => l.machine).filter(Boolean))].length > 0 ? (
-                                                    [...new Set(logs.map(l => l.machine).filter(Boolean))].map((m, i) => (
-                                                        <span key={i} className="px-5 py-2.5 bg-white/10 border border-white/5 rounded-2xl text-xs font-black italic tracking-tight">{m}</span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-slate-600 text-xs font-bold italic">解析データなし</span>
-                                                )}
+                                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">稼働内容詳細</div>
+                                            <div className="space-y-1 bg-white/5 p-6 rounded-3xl border border-white/5">
+                                                {editData.details.split('\n').map((line, i) => (
+                                                    <div key={i} className="text-sm font-black text-white italic tracking-tight">{line}</div>
+                                                ))}
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-10 border-t border-white/5 pt-8 uppercase text-[9px] font-black text-slate-500">
