@@ -746,20 +746,35 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
             const loadAll = async () => {
                 setLoading(true); setSyncInfo("Syncing...");
                 try {
-                    const [repRes, dictRes, stRes] = await Promise.all([
-                        fetch(`${GAS_URL}?action=getPendingReports`),
-                        fetch(`${GAS_URL}?action=getHokutoMaster`),
-                        fetch(`${GAS_URL}?action=getStrategyData&name=ADMIN`)
+                    const fetchSafe = async (action, defaultVal = {}) => {
+                        try {
+                            const res = await fetch(`${GAS_URL}?action=${action}`);
+                            if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                            return await res.json();
+                        } catch (e) {
+                            console.error(`Failed to fetch ${action}:`, e);
+                            return defaultVal;
+                        }
+                    };
+
+                    const [repData, dictData, stData] = await Promise.all([
+                        fetchSafe("getPendingReports", []),
+                        fetchSafe("getHokutoMaster", { data: { "設定１相当": {}, "優良店": {} }, dictionary: [] }),
+                        fetchSafe("getStrategyData&name=ADMIN", [])
                     ]);
-                    const repData = await repRes.json();
-                    const dictData = await dictRes.json();
-                    setReports(repData || []);
+
+                    setReports(repData);
                     setDictionary(dictData.dictionary || []);
-                    setStrategyData(await stRes.json());
+                    setStrategyData(stData);
                     window.HOKUTO_MASTER = dictData.data;
-                    const masterCount = Object.keys(dictData.data["設定１相当"] || {}).length;
-                    setSyncInfo(`完了: 報告${(repData || []).length}件 / マスタ${masterCount}枚`);
-                } catch (e) { setSyncInfo("Sync Error"); console.error(e); } finally { setLoading(false); }
+                    const masterCount = Object.keys(dictData.data?.["設定１相当"] || {}).length;
+                    setSyncInfo(`完了: 報告${repData.length}件 / マスタ${masterCount}枚`);
+                } catch (e) {
+                    setSyncInfo("Sync Error: " + e.message);
+                    console.error(e);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             const getField = (obj, keys) => {
@@ -1129,8 +1144,13 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                                                 <div className="text-base font-black text-white italic tracking-tighter">{editData.報告者}</div>
                                             </div>
                                             <div>
-                                                <div className="mb-1 opacity-50">送信日時 / Submitted</div>
-                                                <div className="text-base font-black text-white italic tracking-tighter">{editData.日付}</div>
+                                                <div className="mb-2 opacity-50">稼働日 / Work Date</div>
+                                                <input
+                                                    type="date"
+                                                    value={editData.日付.includes('T') ? editData.日付.split('T')[0] : editData.日付}
+                                                    onChange={e => setEditData({ ...editData, 日付: e.target.value })}
+                                                    className="bg-white/10 border border-white/20 text-sm font-black text-white italic px-3 py-1.5 rounded-xl outline-none focus:border-indigo-500/50"
+                                                />
                                             </div>
                                         </div>
                                     </div>
