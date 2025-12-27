@@ -780,16 +780,16 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                 const result = { text: memo || "", medal20: 0, medal5: 0, pachi4: 0, cash: 0, salary: 0, remaining: 0 };
                 if (!memo) return result;
 
-                // 20スロ / メダル
-                const m20 = memo.match(/(?:20ス|メダル|枚)[:：]?\s*(-?\d+)/);
+                // 20スロ / メダル (表記揺れ対応)
+                const m20 = memo.match(/(?:20ス|メダル|枚|20slot)[:：]?\s*(-?\d+)/i);
                 // 5スロ
-                const m5 = memo.match(/(?:5ス|5スロ)[:：]?\s*(-?\d+)/);
+                const m5 = memo.match(/(?:5ス|5スロ)[:：]?\s*(-?\d+)/i);
                 // 4パチ
-                const p4 = memo.match(/(?:4パ|4パチ|4円)[:：]?\s*(-?\d+)/);
+                const p4 = memo.match(/(?:4パ|4パチ|4円)[:：]?\s*(-?\d+)/i);
 
-                const cMatch = memo.match(/(?:現金|投資|投資額|円)[:：]?\s*(-?\d+)/);
-                const sMatch = memo.match(/\[本日給料[:：]?\s*(-?\d+)円\]/);
-                const rMatch = memo.match(/\[残投資金[:：]?\s*(-?\d+)円\]/);
+                const cMatch = memo.match(/(?:現金|投資|投資額|残高|cash|円)[:：]?\s*(-?\d+)/i);
+                const sMatch = memo.match(/\[(?:本日給料|給料)[:：]?\s*(-?\d+)円\]/i);
+                const rMatch = memo.match(/\[(?:残投資金|残高)[:：]?\s*(-?\d+)円\]/i);
 
                 if (m20) result.medal20 = parseInt(m20[1]) || 0;
                 if (m5) result.medal5 = parseInt(m5[1]) || 0;
@@ -801,6 +801,25 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
 
                 result.text = memo.replace(/\[.*\]/g, "").trim();
                 return result;
+            };
+
+            const parseHours = (raw) => {
+                if (!raw) return 0;
+                if (String(raw).includes("~") || String(raw).includes("-") || String(raw).includes("〜") || String(raw).includes("～")) {
+                    const parts = String(raw).split(/[~～〜\-]/);
+                    const toMin = (s) => {
+                        if (!s) return 0;
+                        const [h, m] = s.trim().replace(/[：]/g, ":").split(":").map(Number);
+                        return (h || 0) * 60 + (m || 0);
+                    };
+                    if (parts.length === 2) {
+                        const start = toMin(parts[0]);
+                        let end = toMin(parts[1]);
+                        if (end < start) end += 24 * 60;
+                        return Math.round((end - start) / 60 * 10) / 10;
+                    }
+                }
+                return parseFloat(String(raw).replace(/[hH時間]/g, "").replace(",", ".")) || 0;
             };
 
             const matchEvInRange = (val, mData) => {
@@ -924,9 +943,12 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                     const fin = parseFinance(report);
                     setEditData({
                         ...report,
-                        ID: report.ID, 報告者: report.報告者, 店舗名: getField(report, ["店舗名", "store"]), 日付: report.日付,
-                        稼働時間: getField(report, ["稼働時間", "hours", "時間", "TIME (H)", "time"]),
-                        rawHours: getField(report, ["rawHours", "hours_str", "時間入力値"]),
+                        ID: getField(report, ["ID", "id"]),
+                        報告者: getField(report, ["報告者", "name", "名前"]),
+                        店舗名: getField(report, ["店舗名", "store"]),
+                        日付: getField(report, ["日付", "date"]),
+                        稼働時間: getField(report, ["稼働時間", "hours", "時間", "TIME (H)", "time", "rawHours"]),
+                        rawHours: getField(report, ["rawHours", "hours_str", "時間入力値", "稼働時間"]),
                         medal20: getField(report, ["最終メダル枚数", "medal", "枚数", "medal20"]) || fin.medal20,
                         medal5: getField(report, ["medal5", "5スロ"]) || fin.medal5,
                         pachi4: getField(report, ["pachi4", "4パチ", "4円"]) || fin.pachi4,
@@ -981,12 +1003,14 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                     (info.salary ? `\n[本日給料: ${info.salary}円]` : "") +
                     (info.remaining ? `\n[残投資金: ${info.remaining}円]` : "");
 
-                const hours = parseFloat(editData.稼働時間) || 0;
+                const hours = parseHours(editData.rawHours || editData.稼働時間);
                 const payload = {
-                    id: report.ID, date: report.日付, name: report.報告者, store: editData.店舗名, machine: logs.map(l => l.machine).filter(Boolean).join("/"),
+                    id: report.ID, date: report.日付, name: report.報告者, store: editData.店舗名,
+                    machine: logs.map(l => l.machine).filter(Boolean).join("/"),
                     ev: logs.reduce((s, l) => s + l.ev, 0),
                     profit: (info.m20 * 20) + (info.m5 * 5) + (info.p4 * 4) - info.cash,
-                    hours: hours, memo: memoWithFinance
+                    hours: hours, memo: memoWithFinance,
+                    details: editData.details // 修正された稼働内容も送信
                 };
                 setLoading(true);
                 try {
@@ -1059,11 +1083,22 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                                 <div className="bg-slate-900 rounded-[2.5rem] p-10 lg:p-14 text-white shadow-xl relative overflow-hidden">
                                     <div className="flex flex-col gap-8">
                                         <div>
-                                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">稼働内容詳細</div>
-                                            <div className="space-y-1 bg-white/5 p-6 rounded-3xl border border-white/5">
-                                                {editData.details.split('\n').map((line, i) => (
-                                                    <div key={i} className="text-sm font-black text-white italic tracking-tight">{line}</div>
-                                                ))}
+                                            <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
+                                                <div className="flex justify-between items-center mb-3 px-1">
+                                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">稼働ログ詳細 (※修正可能)</div>
+                                                    <button
+                                                        onClick={() => handleAnalyze({ ...editData, 稼働内容: editData.details })}
+                                                        className="text-[9px] font-black bg-indigo-500/20 text-indigo-400 px-3 py-1 rounded-lg hover:bg-indigo-500/30 transition-all"
+                                                    >
+                                                        再解析 (期待値・機種)
+                                                    </button>
+                                                </div>
+                                                <textarea
+                                                    value={editData.details}
+                                                    onChange={e => setEditData({ ...editData, details: e.target.value })}
+                                                    className="w-full bg-slate-800/50 border border-white/10 p-4 rounded-2xl text-xs font-bold leading-relaxed min-h-[150px] outline-none focus:border-indigo-500/50 transition-all text-white"
+                                                    placeholder="稼働内容..."
+                                                />
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-10 border-t border-white/5 pt-8 uppercase text-[9px] font-black text-slate-500">
