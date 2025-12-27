@@ -127,7 +127,18 @@
             const [strategies, setStrategies] = useState([]); // 攻略データ
             const [search, setSearch] = useState(""); // 検索ワード
             const [logInput, setLogInput] = useState({ machine: "", detail: "" });
-            const [reportInput, setReportInput] = useState({ store: "", hours: "", medal20: "", medal5: "", pachi4: "", cash: "", memo: "", salary: "", remainingCash: "" });
+            const [reportInput, setReportInput] = useState({
+                store: "",
+                hours: "",
+                date: new Date().toISOString().split('T')[0],
+                medal20: "",
+                medal5: "",
+                pachi4: "",
+                cash: "",
+                memo: "",
+                salary: "",
+                remainingCash: ""
+            });
             const [status, setStatus] = useState("");
             const [submitting, setSubmitting] = useState(false);
             const [strategyLoading, setStrategyLoading] = useState(false);
@@ -274,22 +285,29 @@
             const removeLog = (id) => setLogs(logs.filter(l => l.id !== id));
 
             const submit = async () => {
-                showConfirm("報告送信の確認", `現在のログ（${logs.length}件）を含む全てのデータを送信します。送信後はログ履歴がリセットされますが、よろしいですか？`, async () => {
-                    if (logs.length === 0 || !reportInput.store) return showAlert("不備があります", "ログ履歴、または店舗名が入力されておりません。");
+                if (logs.length === 0 || !reportInput.store) return showAlert("不備があります", "ログ履歴、または店舗名が入力されておりません。");
 
+                const checkMsg = `
+【送信内容の最終確認】
+稼働日: ${reportInput.date}
+店舗名: ${reportInput.store}
+20スロ: ${reportInput.medal20 || 0}枚
+5スロ: ${reportInput.medal5 || 0}枚
+4パチ: ${reportInput.pachi4 || 0}玉
+投資: ${reportInput.cash || 0}円
+給料: ${reportInput.salary || 0}円
+残高: ${reportInput.remainingCash || 0}円
+
+この内容で間違いありませんか？
+`.trim();
+
+                showConfirm("報告送信の最終点検", checkMsg, async () => {
                     setSubmitting(true);
                     const logText = logs.map(l => `${l.machine} ${l.detail}`).join("\n");
                     const calculatedHours = parseHours(reportInput.hours);
-                    const memoWithFinance = reportInput.memo +
-                        (reportInput.medal20 ? `\n[20スロ: ${reportInput.medal20}枚]` : "") +
-                        (reportInput.medal5 ? `\n[5スロ: ${reportInput.medal5}枚]` : "") +
-                        (reportInput.pachi4 ? `\n[4パチ: ${reportInput.pachi4}枚]` : "") +
-                        (reportInput.cash ? `\n[本日投資: ${reportInput.cash}円]` : "") +
-                        (reportInput.salary ? `\n[本日給料: ${reportInput.salary}円]` : "") +
-                        (reportInput.remainingCash ? `\n[残投資金: ${reportInput.remainingCash}円]` : "");
 
                     const payload = {
-                        date: new Date().toLocaleDateString('ja-JP'),
+                        date: reportInput.date,
                         name: user.displayName,
                         store: reportInput.store,
                         details: logText,
@@ -309,7 +327,11 @@
                             body: JSON.stringify({ action: "submitReport", data: payload })
                         });
                         setStatus("正常に送信されました。本日もお疲れ様でした。");
-                        setLogs([]); setReportInput({ store: "", hours: "", medal20: "", medal5: "", pachi4: "", cash: "", memo: "", salary: "", remainingCash: "" });
+                        setLogs([]);
+                        setReportInput({
+                            store: "", hours: "", date: new Date().toISOString().split('T')[0],
+                            medal20: "", medal5: "", pachi4: "", cash: "", memo: "", salary: "", remainingCash: ""
+                        });
                         localStorage.removeItem("l_v7");
                         localStorage.removeItem("r_v7");
                         setActiveTab("log");
@@ -446,9 +468,15 @@
 
                                         <section className="card p-5 space-y-5 shadow-xl border-indigo-500/10">
                                             <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest px-1">詳細情報の入力</div>
-                                            <div>
-                                                <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">店舗名</label>
-                                                <input value={reportInput.store} onChange={e => setReportInput({ ...reportInput, store: e.target.value })} className="input-dark font-bold text-base" placeholder="例: マルハン〇〇店" />
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">稼働日</label>
+                                                    <input type="date" value={reportInput.date} onChange={e => setReportInput({ ...reportInput, date: e.target.value })} className="input-dark py-3 font-bold text-xs" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">店舗名</label>
+                                                    <input value={reportInput.store} onChange={e => setReportInput({ ...reportInput, store: e.target.value })} className="input-dark font-bold text-base" placeholder="例: マルハン〇〇店" />
+                                                </div>
                                             </div>
 
                                             <div className="space-y-4">
