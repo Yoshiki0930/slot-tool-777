@@ -780,24 +780,30 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                 const result = { text: memo || "", medal20: 0, medal5: 0, pachi4: 0, cash: 0, salary: 0, remaining: 0 };
                 if (!memo) return result;
 
-                // 20スロ / メダル (表記揺れ対応)
-                const m20 = memo.match(/(?:20ス|メダル|枚|20slot)[:：]?\s*(-?\d+)/i);
-                // 5スロ
-                const m5 = memo.match(/(?:5ス|5スロ)[:：]?\s*(-?\d+)/i);
-                // 4パチ
-                const p4 = memo.match(/(?:4パ|4パチ|4円)[:：]?\s*(-?\d+)/i);
-
-                const cMatch = memo.match(/(?:現金|投資|投資額|残高|cash|円)[:：]?\s*(-?\d+)/i);
-                const sMatch = memo.match(/\[(?:本日給料|給料)[:：]?\s*(-?\d+)円\]/i);
-                const rMatch = memo.match(/\[(?:残投資金|残高)[:：]?\s*(-?\d+)円\]/i);
+                // タグ形式 [...] からの抽出を強化 (全角半角、ロの有無に対応)
+                const m20 = memo.match(/\[(?:20スロ?|メダル|枚|20slot)[:：]\s*([+-]?\d+)/i);
+                const m5 = memo.match(/\[(?:5スロ?|5slot)[:：]\s*([+-]?\d+)/i);
+                const p4 = memo.match(/\[(?:4パチ?|4円|4pachi)[:：]\s*([+-]?\d+)/i);
+                const cMatch = memo.match(/\[(?:本日投資|投資|投資額|cash)[:：]\s*([+-]?\d+)/i);
+                const sMatch = memo.match(/\[(?:本日給料|給料)[:：]\s*([+-]?\d+)/i);
+                const rMatch = memo.match(/\[(?:残投資金|残高)[:：]\s*([+-]?\d+)/i);
 
                 if (m20) result.medal20 = parseInt(m20[1]) || 0;
                 if (m5) result.medal5 = parseInt(m5[1]) || 0;
                 if (p4) result.pachi4 = parseInt(p4[1]) || 0;
-
                 if (cMatch) result.cash = parseInt(cMatch[1]) || 0;
                 if (sMatch) result.salary = parseInt(sMatch[1]) || 0;
                 if (rMatch) result.remaining = parseInt(rMatch[1]) || 0;
+
+                // フォールバック: タグ形式以外（旧形式や手入力）
+                if (!m20) {
+                    const fallbackM20 = memo.match(/(?:20スロ?|メダル|枚)[:：]?\s*([+-]?\d+)/i);
+                    if (fallbackM20) result.medal20 = parseInt(fallbackM20[1]) || 0;
+                }
+                if (!cMatch) {
+                    const fallbackC = memo.match(/(?:本日投資|投資|現金|投資額|円)[:：]?\s*([+-]?\d+)/i);
+                    if (fallbackC) result.cash = parseInt(fallbackC[1]) || 0;
+                }
 
                 result.text = memo.replace(/\[.*\]/g, "").trim();
                 return result;
