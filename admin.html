@@ -223,17 +223,20 @@
             const [tab, setTab] = useState("logs");
             const [logs, setLogs] = useState([]);
             const [blacklist, setBlacklist] = useState([]);
+            const [settings, setSettings] = useState({ registrationLocked: false });
             const [loading, setLoading] = useState(false);
             useEffect(() => { load(); }, []);
             const load = async () => {
                 setLoading(true);
                 try {
-                    const [hRes, bRes] = await Promise.all([
+                    const [hRes, bRes, sRes] = await Promise.all([
                         fetch(`${GAS_URL}?action=getAccessHistory`),
-                        fetch(`${GAS_URL}?action=getBlacklist`)
+                        fetch(`${GAS_URL}?action=getBlacklist`),
+                        fetch(`${GAS_URL}?action=getSettings`)
                     ]);
                     setLogs(await hRes.json());
                     setBlacklist(await bRes.json());
+                    setSettings(await sRes.json());
                 } catch (e) { console.error(e); }
                 finally { setLoading(false); }
             };
@@ -253,6 +256,7 @@
                             <div className="flex gap-2 bg-slate-200 p-1 rounded-full w-full md:w-auto">
                                 <button onClick={() => setTab("logs")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'logs' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>履歴</button>
                                 <button onClick={() => setTab("ban")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'ban' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>出禁</button>
+                                <button onClick={() => setTab("system")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'system' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>System ⚙️</button>
                             </div>
                             <button onClick={onClose} className="absolute top-4 right-8 text-slate-400 hover:text-rose-500 text-3xl transition-colors">✕</button>
                         </div>
@@ -296,7 +300,42 @@
                                     </div>
                                     <button onClick={saveBan} className="w-full bg-rose-600 py-5 rounded-3xl text-white font-black">ブラックリストを更新保存</button>
                                 </div>
-                            )}
+                            ) : tab === "system" ? (
+                            <div className="max-w-md mx-auto space-y-10 py-10">
+                                <div className="text-center space-y-2">
+                                    <h3 className="text-xl font-black italic">System Settings 🛠</h3>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">アプリの運用・登録制限を管理します</p>
+                                </div>
+
+                                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-black mb-1">新規登録ロック</div>
+                                        <div className="text-[10px] font-bold text-slate-400">ONにすると新しい打ち子の名前登録を停止します</div>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            const newVal = !settings.registrationLocked;
+                                            setSettings({ ...settings, registrationLocked: newVal });
+                                            setLoading(true);
+                                            try {
+                                                await fetch(GAS_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ action: "updateSettings", data: { registrationLocked: String(newVal) } }) });
+                                            } catch (e) { alert(e.message); }
+                                            finally { setLoading(false); }
+                                        }}
+                                        className={`w-16 h-8 rounded-full transition-all relative ${settings.registrationLocked ? 'bg-rose-600' : 'bg-slate-300'}`}
+                                    >
+                                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${settings.registrationLocked ? 'right-1' : 'left-1'}`}></div>
+                                    </button>
+                                </div>
+
+                                {settings.registrationLocked && (
+                                    <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl flex gap-4 text-rose-700 italic">
+                                        <span className="text-xl">⚠️</span>
+                                        <p className="text-[10px] font-bold leading-relaxed">現在「新規登録ロック」が有効です。新しい打ち子はアプリを開始できません（すでにログイン済みのメンバーは通常通り利用できます）。</p>
+                                    </div>
+                                )}
+                            </div>
+                            ) : null}
                         </div>
                     </div>
                 </div>
@@ -307,7 +346,77 @@
             const [range, setRange] = React.useState({ start: "", end: "" });
             const [data, setData] = React.useState([]);
             const [loading, setLoading] = React.useState(false);
-            const [prompt, setPrompt] = React.useState(localStorage.getItem('kpi_prompt') || `【タスク】\nスロット軍団のKPI分析レポートを作成してください。\nLINEで共有できる「文章レポート」と「HTML画像レポート」の両方を作成してください。`);
+            const [prompt, setPrompt] = React.useState(localStorage.getItem('kpi_prompt') || `【タスク】
+スロット軍団のKPI分析レポートを作成してください。
+LINEで共有できる「文章レポート」と「HTML画像レポート」の両方を作成してください。
+
+
+【組織構造】
+- 管理者（親）：矢萩、菊地
+- 打ち子（部下）：高宮、京平、前野、りゅう（現在休み中）
+※管理者は打ち子に台をパスすることが多いため、期待値時給が低く出る場合がある点に注意
+※打ち子（新たな名前）が増えても対応できるようにしておいてください。
+
+【重要な前提条件】
+1. 実収支報告があるのは矢萩と菊地のみ（他は期待値のみ）
+2. 期待値は概算で記載している部分もある
+3. 差額（実収支-期待値）の表記は不要
+4.店舗別、曜日別、イベント日別、平日or土日祝別など様々なパターン分析が理想
+
+【店舗情報】
+- メイン店舗：野川、駒岡
+- サブ店舗：グラキコ（矢萩）、ベル（菊地）、ピーアーク、ドラゴン
+- 野川は日曜から1週間おすすめ機種が変わる（北斗がよく選ばれる）
+
+【分析の優先順位】※全て重要
+1. 実収支の分析（矢萩・菊地のみ）
+2. 店舗別・機種別の時給分析
+3. メンバー間の比較
+4. 期間比較（前期間との比較）
+
+【必須分析項目】
+1. チーム全体成績（期待値、実収支）
+2. メンバー別成績ランキング
+3. 店舗別時給分析（期待値時給・実収支時給）
+4.北斗の分析（メイン機種として）
+5. 曜日別分析（月〜日の収支比較）
+6. 平日・土日祝別分析
+7. 日付別トレンド分析
+8. 週別分析（特に野川の日曜基準）
+9. 人別獲得期待値分析（誰が最も期待値を積んでいるか）
+10. 前期間との比較（ある場合）
+11. 土日専門メンバー分析（京平）
+
+【レポート形式】
+1. LINE用文章レポート（コピペ可能な形式）
+   - 絵文字を適度に使用
+   - 見出しを明確に区切る
+   - 数値は見やすく整形
+
+2. HTML画像レポート
+   - スマホ表示最適化（max-width: 500px）
+   - グラデーション背景使用
+   - 重要数値は大きく表示
+   - 時給情報を強調
+
+【分析時の注意点】
+- 実収支データがないメンバーは期待値のみ表示（実収支の欄があるけど空欄とかそういうのもいらない）
+- 時給計算は稼働時間から算出
+- 野川の重要性を明記
+- 成功要因と改善点を具体的に提示
+
+【出力順序】
+1. データ解析（repl使用）
+2. LINE用文章レポート
+3. HTML画像レポート（artifacts使用）
+4. 重要な発見・提言
+
+【特記事項】
+- 期間は直近の集計期間を自動判定
+- 前期間データがあれば自動で比較
+- 管理者の低い期待値時給については「台パスによる影響」として説明
+
+これで分析を開始してください。`);
             const [activeTab, setActiveTab] = React.useState("stats"); // stats, report, prompt
             const [reportResult, setReportResult] = React.useState({ text: "", html: "" });
 
