@@ -805,8 +805,6 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
             const loadAll = async () => {
                 setLoading(true); setSyncInfo("Syncing...");
                 try {
-                    // 管理者アプリ起動ログの記録
-                    fetch(`${GAS_URL}?action=logAccess&name=ADMIN&type=管理者アプリ起動`).catch(() => { });
                     const fetchSafe = async (action, defaultVal = {}) => {
                         try {
                             const res = await fetch(`${GAS_URL}?action=${action}`);
