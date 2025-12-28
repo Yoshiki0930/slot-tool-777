@@ -1163,11 +1163,11 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                                             {checkedIds.includes(r.ID) && <span className="text-[#0076FF] font-black text-xs">✓</span>}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <div className="text-sm font-black text-white truncate">{r.報告者}</div>
-                                                <div className="text-[8px] font-black opacity-40 uppercase font-mono">{r.日付}</div>
+                                            <div className="flex justify-between items-baseline mb-1">
+                                                <div className="text-sm font-black text-white truncate">{r.名前 || r.報告者}</div>
+                                                <div className="text-[8px] font-black opacity-40 uppercase font-mono ml-2 shrink-0">{String(r.日付).split(/[T\s]/)[0]}</div>
                                             </div>
-                                            <div className="font-bold text-[10px] truncate opacity-80">{r.店舗名} ({r.報告者})</div>
+                                            <div className="font-bold text-[10px] truncate opacity-80 text-slate-400">{r.店舗名}</div>
                                         </div>
                                     </div>
                                 </div>
