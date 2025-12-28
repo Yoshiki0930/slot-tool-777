@@ -13,7 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
             background-color: #0f172a;
             color: #f8fafc;
             -webkit-tap-highlight-color: transparent;
@@ -177,6 +177,16 @@
                         const res = await fetch(`${GAS_URL}?action=getSettings`);
                         const settings = await res.json();
                         setIsRegistrationLocked(settings.registrationLocked);
+
+                        // 管理者による名前修正の同期チェック
+                        const savedUser = JSON.parse(localStorage.getItem("u_v7") || "{}");
+                        if (savedUser.displayName && settings.nameMap && settings.nameMap[savedUser.displayName]) {
+                            const newName = settings.nameMap[savedUser.displayName];
+                            const updatedUser = { ...savedUser, displayName: newName };
+                            setUser(updatedUser);
+                            localStorage.setItem("u_v7", JSON.stringify(updatedUser));
+                            showAlert("システム通知", `管理者の指示により、登録名が「${newName}」に更新されました。`);
+                        }
                     } catch (e) { console.error("Setting sync fail:", e); }
                 };
                 checkLock();
@@ -209,7 +219,7 @@
             };
 
             const logout = () => {
-                showAlert("システム通知", "セキュリティ保護のため、ログイン名の変更は現在許可されていません。");
+                showAlert("システム通知", "セキュリティ保護のため、ログイン名の変更は許可されていません。");
             };
 
             const fetchStrategy = async () => {
@@ -368,7 +378,7 @@
                             <div className="w-full max-w-xs space-y-6 animate-fadeIn">
                                 <div className="text-center">
                                     <h1 className="text-3xl font-black mb-1 italic tracking-tighter">WORKER APP<span className="text-indigo-600">.</span></h1>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Login / 設定確認</p>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">初期登録 / 名前を入力してください</p>
                                 </div>
                                 {isRegistrationLocked ? (
                                     <div className="card p-8 space-y-6 shadow-xl border-rose-500/20 bg-rose-500/5 text-center">
@@ -385,14 +395,17 @@
                                     </div>
                                 ) : (
                                     <form onSubmit={handleLogin} className="card p-6 space-y-4 shadow-xl">
-                                        <input
-                                            type="text"
-                                            value={tempName}
-                                            onChange={e => setTempName(e.target.value)}
-                                            className="input-dark text-center font-bold"
-                                            placeholder="あなたのお名前"
-                                            required
-                                        />
+                                        <div className="space-y-2">
+                                            <input
+                                                type="text"
+                                                value={tempName}
+                                                onChange={e => setTempName(e.target.value)}
+                                                className="input-dark font-bold text-lg"
+                                                placeholder="例: 前野"
+                                                required
+                                            />
+                                            <p className="text-[9px] text-slate-500 font-bold px-1 tracking-tighter">※漢字・ひらがな・カタカナで入力可能です。</p>
+                                        </div>
                                         <button type="submit" className="btn-premium">アプリを始める</button>
                                     </form>
                                 )}
@@ -407,7 +420,7 @@
                                 <div className="text-lg font-black italic tracking-tighter">稼働まとめ<span className="text-indigo-600">.</span></div>
                                 <div className="flex items-center gap-3">
                                     <button onClick={() => location.reload(true)} className="text-[10px] font-black text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full active:scale-95 transition-all">最新に更新</button>
-                                    <div onClick={logout} className="text-[10px] font-black text-slate-400 bg-white/5 px-3 py-1.5 rounded-full active:bg-indigo-500/20 truncate max-w-[100px]">
+                                    <div className="text-[10px] font-black text-slate-400 bg-white/5 px-3 py-1.5 rounded-full truncate max-w-[100px]">
                                         {user.displayName}
                                     </div>
                                 </div>
