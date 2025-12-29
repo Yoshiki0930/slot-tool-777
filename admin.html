@@ -220,17 +220,19 @@
         }
 
         function SecurityHub({ onClose }) {
-            const [tab, setTab] = useState("logs");
+            const [activeTab, setActiveTab] = useState("logs");
             const [logs, setLogs] = useState([]);
             const [blacklist, setBlacklist] = useState([]);
             const [members, setMembers] = useState([]);
+            const [medals, setMedals] = useState([]);
             const [settings, setSettings] = useState({ registrationLocked: false });
             const [loading, setLoading] = useState(false);
+
             useEffect(() => { load(); }, []);
+
             const load = async () => {
                 setLoading(true);
                 try {
-                    // 各リクエストを個別に試行し、エラーが起きても他を止めないよう堅牢化
                     const fetchSafe = async (action, defaultVal = []) => {
                         try {
                             const res = await fetch(`${GAS_URL}?action=${action}`);
@@ -242,17 +244,19 @@
                         }
                     };
 
-                    const [hData, bData, sData, mData] = await Promise.all([
+                    const [hData, bData, sData, mData, medalData] = await Promise.all([
                         fetchSafe("getAccessHistory", []),
                         fetchSafe("getBlacklist", []),
                         fetchSafe("getSettings", { registrationLocked: false }),
-                        fetchSafe("getMembers", [])
+                        fetchSafe("getMembers", []),
+                        fetchSafe("getSavingMedals", [])
                     ]);
 
                     setLogs(hData);
                     setBlacklist(bData);
                     setSettings(sData);
                     setMembers(mData);
+                    setMedals(medalData);
                 } catch (e) {
                     console.error("Critical load error:", e);
                 } finally {
@@ -306,16 +310,17 @@
                         <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center bg-slate-50 shrink-0 gap-4 relative">
                             <h2 className="text-2xl font-black italic text-slate-900 uppercase">Security Hub 🛡</h2>
                             <div className="flex gap-2 bg-slate-200 p-1 rounded-full w-full md:w-auto">
-                                <button onClick={() => setTab("logs")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'logs' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>履歴</button>
-                                <button onClick={() => setTab("ban")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'ban' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>出禁</button>
-                                <button onClick={() => setTab("system")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${tab === 'system' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>設定</button>
+                                <button onClick={() => setActiveTab("logs")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${activeTab === 'logs' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>履歴</button>
+                                <button onClick={() => setActiveTab("ban")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${activeTab === 'ban' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>出禁</button>
+                                <button onClick={() => setActiveTab("medals")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${activeTab === 'medals' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>貯メダル</button>
+                                <button onClick={() => setActiveTab("system")} className={`flex-1 md:flex-none px-8 py-3 rounded-full text-xs font-black transition-all whitespace-nowrap ${activeTab === 'system' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>設定</button>
                             </div>
                             <button onClick={onClose} className="absolute top-4 right-8 text-slate-400 hover:text-rose-500 text-3xl transition-colors">✕</button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-10 custom-scroll">
                             {loading ? (
                                 <div className="h-full flex items-center justify-center text-slate-400 font-black italic animate-pulse">読み込み中...</div>
-                            ) : tab === "logs" ? (
+                            ) : activeTab === "logs" ? (
                                 <div className="space-y-2">
                                     {logs.length > 0 ? (
                                         logs.map((L, i) => (
@@ -331,7 +336,7 @@
                                         <div className="text-center py-10 text-slate-300 italic font-bold">履歴がありません</div>
                                     )}
                                 </div>
-                            ) : tab === "ban" ? (
+                            ) : activeTab === "ban" ? (
                                 <div className="max-w-md mx-auto space-y-6 text-center">
                                     <h3 className="text-xl font-black text-rose-600 uppercase">Blacklist Control</h3>
                                     <div className="space-y-2 text-left">
@@ -352,7 +357,37 @@
                                     </div>
                                     <button onClick={saveBan} className="w-full bg-rose-600 py-5 rounded-3xl text-white font-black">ブラックリストを更新保存</button>
                                 </div>
-                            ) : tab === "system" ? (
+                            ) : activeTab === "medals" ? ( // New "貯メダル" tab content
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn pb-10">
+                                    {medals.length === 0 ? (
+                                        <div className="col-span-full py-20 text-center text-slate-600 italic font-bold">貯メダルデータがありません。</div>
+                                    ) : medals.map((m, i) => (
+                                        <div key={i} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex flex-col gap-4">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="text-sm font-black text-slate-900 italic">{m.名前}</div>
+                                                    <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mt-1">{m.店舗名}</div>
+                                                </div>
+                                                <div className="text-[8px] font-mono text-slate-500">{new Date(m.更新日).toLocaleDateString()}</div>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2 text-center border-t border-slate-100 pt-4">
+                                                <div>
+                                                    <div className="text-[8px] font-black text-rose-600 uppercase mb-1">20スロ</div>
+                                                    <div className="text-sm font-black text-slate-900">{m["20スロ"].toLocaleString()}枚</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[8px] font-black text-indigo-600 uppercase mb-1">5スロ</div>
+                                                    <div className="text-sm font-black text-slate-900">{m["5スロ"].toLocaleString()}枚</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[8px] font-black text-emerald-600 uppercase mb-1">4パチ</div>
+                                                    <div className="text-sm font-black text-slate-900">{m["4パチ"].toLocaleString()}玉</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : activeTab === "system" ? (
                                 <div className="max-w-md mx-auto space-y-12 py-6">
                                     <div className="text-center space-y-2">
                                         <h3 className="text-xl font-black italic">Settings Center</h3>
@@ -677,7 +712,7 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                                                         <tr><th className="p-4 text-left">Store</th><th className="p-4 text-right">Hourly</th><th className="p-4 text-right">Total P</th></tr>
                                                     </thead>
                                                     <tbody className="font-bold">
-                                                        {Object.entries(stats.store).sort((a, b) => b[1].p - a[1].p).map(([n, s]) => (
+                                                        {Object.entries(stats.store).sort((a, b) => (b[1].p / (b[1].h || 1)) - (a[1].p / (a[1].h || 1))).map(([n, s]) => (
                                                             <tr key={n} className="border-t border-slate-200">
                                                                 <td className="p-4">{n}</td>
                                                                 <td className="p-4 text-right text-emerald-600">{Math.round(s.p / (s.h || 1)).toLocaleString()}/h</td>
@@ -885,21 +920,58 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
 
             const parseHours = (raw) => {
                 if (!raw) return 0;
-                if (String(raw).includes("~") || String(raw).includes("-") || String(raw).includes("〜") || String(raw).includes("～")) {
-                    const parts = String(raw).split(/[~～〜\-]/);
-                    const toMin = (s) => {
-                        if (!s) return 0;
-                        const [h, m] = s.trim().replace(/[：]/g, ":").split(":").map(Number);
-                        return (h || 0) * 60 + (m || 0);
-                    };
-                    if (parts.length === 2) {
-                        const start = toMin(parts[0]);
-                        let end = toMin(parts[1]);
-                        if (end < start) end += 24 * 60;
-                        return Math.round((end - start) / 60 * 10) / 10;
+                let s = String(raw)
+                    .replace(/[：:時]/g, ":")
+                    .replace(/[~～〜－—―ー-]/g, "~")
+                    .replace(/[間ｈＨhH時間]/g, "")
+                    .replace(/[、，]/g, ".")
+                    .trim();
+
+                const toMin = (str) => {
+                    const t = str.trim();
+                    if (!t) return 0;
+                    if (t.includes(":")) {
+                        const parts = t.split(":");
+                        return (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+                    }
+                    return (parseFloat(t) || 0) * 60;
+                };
+
+                // 複数の時間帯を処理
+                const timeRanges = s.split(/[\s,、]+/).filter(Boolean);
+                let totalMinutes = 0;
+
+                for (const range of timeRanges) {
+                    if (range.includes("~")) {
+                        const parts = range.split("~");
+                        if (parts.length === 2 && parts[0] && parts[1]) {
+                            const start = toMin(parts[0]);
+                            let end = toMin(parts[1]);
+                            // 終了時刻が開始時刻より前の場合は翌日と判断
+                            if (end < start) end += 24 * 60;
+                            totalMinutes += (end - start);
+                        }
+                    } else {
+                        // 単一の数値（時間）の場合
+                        totalMinutes += (parseFloat(range) || 0) * 60;
                     }
                 }
-                return parseFloat(String(raw).replace(/[hH時間]/g, "").replace(",", ".")) || 0;
+
+                // 15分単位に丸める
+                const totalHours = totalMinutes / 60;
+                return Math.round(totalHours * 4) / 4;
+            };
+            window.parseHours = parseHours;
+
+            const safeParseFinance = (val) => {
+                if (val === undefined || val === null || val === "") return 0;
+                if (typeof val === 'number') return val;
+                let s = String(val)
+                    .replace(/[枚円個玉]/g, "")
+                    .replace(/[，,]/g, "")
+                    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0))
+                    .trim();
+                return parseFloat(s) || 0;
             };
 
             const matchEvInRange = (val, mData) => {
@@ -1063,12 +1135,12 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                     store: editData.店舗名,
                     details: editData.details,
                     hours: editData.rawHours || editData.稼働時間,
-                    medal20: editData.medal20,
-                    medal5: editData.medal5,
-                    pachi4: editData.pachi4,
-                    cash: editData.cash,
-                    salary: editData.salary,
-                    remaining: editData.remaining,
+                    medal20: safeParseFinance(editData.medal20),
+                    medal5: safeParseFinance(editData.medal5),
+                    pachi4: safeParseFinance(editData.pachi4),
+                    cash: safeParseFinance(editData.cash),
+                    salary: safeParseFinance(editData.salary),
+                    remaining: safeParseFinance(editData.remaining),
                     memo: memoWithFinance
                 };
                 try {
@@ -1082,12 +1154,12 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
             const onApprove = async () => {
                 const report = reports.find(r => r.ID === selectedId);
                 const info = {
-                    m20: parseInt(editData.medal20) || 0,
-                    m5: parseInt(editData.medal5) || 0,
-                    p4: parseInt(editData.pachi4) || 0,
-                    cash: parseInt(editData.cash) || 0,
-                    salary: parseInt(editData.salary) || 0,
-                    remaining: parseInt(editData.remaining) || 0,
+                    m20: safeParseFinance(editData.medal20),
+                    m5: safeParseFinance(editData.medal5),
+                    p4: safeParseFinance(editData.pachi4),
+                    cash: safeParseFinance(editData.cash),
+                    salary: safeParseFinance(editData.salary),
+                    remaining: safeParseFinance(editData.remaining),
                     text: (editData.memo || "").replace(/\[.*\]/g, "").trim()
                 };
 
@@ -1234,40 +1306,40 @@ LINEで共有できる「文章レポート」と「HTML画像レポート」の
                                             <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                                                 <div className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">稼働時間</div>
                                                 <input value={editData.rawHours || ""} onChange={e => setEditData({ ...editData, rawHours: e.target.value })} className="bg-white border text-base font-black px-4 py-3 rounded-xl w-full" placeholder="8:40~21:10" />
-                                                <div className="text-[9px] font-bold text-[#0076FF] mt-2 ml-1 italic">数値: {editData.稼働時間 !== undefined ? editData.稼働時間 : "0"}h</div>
+                                                <div className="text-[9px] font-bold text-[#0076FF] mt-2 ml-1 italic">数値: {parseHours(editData.rawHours || editData.稼働時間)}h</div>
                                             </div>
                                             <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100 space-y-6">
                                                 <div className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">最終枚数 / 球数</div>
                                                 <div className="space-y-4">
                                                     <div>
-                                                        <label className="text-[9px] font-black text-rose-500 uppercase ml-1">20スロ</label>
-                                                        <input type="number" value={editData.medal20 ?? 0} onChange={e => setEditData({ ...editData, medal20: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="20スロ枚数" />
+                                                        <label className="text-[9px] font-black text-rose-500 uppercase ml-1">20スロ <span className="text-[7px] text-slate-400 font-normal italic">※「枚」OK</span></label>
+                                                        <input type="text" value={editData.medal20 ?? 0} onChange={e => setEditData({ ...editData, medal20: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="2500枚" />
                                                     </div>
                                                     <div>
-                                                        <label className="text-[9px] font-black text-indigo-500 uppercase ml-1">5スロ</label>
-                                                        <input type="number" value={editData.medal5 ?? 0} onChange={e => setEditData({ ...editData, medal5: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="5スロ枚数" />
+                                                        <label className="text-[9px] font-black text-indigo-500 uppercase ml-1">5スロ <span className="text-[7px] text-slate-400 font-normal italic">※「枚」OK</span></label>
+                                                        <input type="text" value={editData.medal5 ?? 0} onChange={e => setEditData({ ...editData, medal5: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="1000枚" />
                                                     </div>
                                                     <div>
-                                                        <label className="text-[9px] font-black text-emerald-500 uppercase ml-1">4円パチ</label>
-                                                        <input type="number" value={editData.pachi4 ?? 0} onChange={e => setEditData({ ...editData, pachi4: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="4円パチ数" />
+                                                        <label className="text-[9px] font-black text-emerald-500 uppercase ml-1">4円パチ <span className="text-[7px] text-slate-400 font-normal italic">※「玉」OK</span></label>
+                                                        <input type="text" value={editData.pachi4 ?? 0} onChange={e => setEditData({ ...editData, pachi4: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="5000玉" />
                                                     </div>
                                                 </div>
                                             </div>
 
                                             <div className="space-y-4">
                                                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">本日投資 (円)</div>
-                                                    <input type="number" value={editData.cash ?? 0} onChange={e => setEditData({ ...editData, cash: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="投資" />
+                                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">本日投資 (円) <span className="text-[7px] italic">※「円」OK</span></div>
+                                                    <input type="text" value={editData.cash ?? 0} onChange={e => setEditData({ ...editData, cash: e.target.value })} className="bg-white border text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="15000円" />
                                                 </div>
                                                 <div className="bg-slate-50 p-6 rounded-3xl border border-emerald-100">
-                                                    <div className="text-[10px] font-black text-emerald-500 uppercase mb-2 ml-1">本日の給料</div>
-                                                    <input type="number" value={editData.salary ?? 0} onChange={e => setEditData({ ...editData, salary: e.target.value })} className="bg-white border border-emerald-200 text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="給料" />
+                                                    <div className="text-[10px] font-black text-emerald-500 uppercase mb-2 ml-1">本日の給料 <span className="text-[7px] italic">※「円」OK</span></div>
+                                                    <input type="text" value={editData.salary ?? 0} onChange={e => setEditData({ ...editData, salary: e.target.value })} className="bg-white border border-emerald-200 text-lg font-black px-4 py-3 rounded-xl w-full" placeholder="10000円" />
                                                 </div>
                                             </div>
 
                                             <div className="bg-indigo-50 border border-indigo-100 p-8 rounded-[2.5rem] shadow-sm">
-                                                <div className="text-[10px] font-black text-indigo-400 uppercase mb-3 ml-1">引いた後の残投資金 (財布の残高)</div>
-                                                <input type="number" value={editData.remaining ?? 0} onChange={e => setEditData({ ...editData, remaining: e.target.value })} className="bg-white border-2 border-indigo-200 text-2xl font-black px-6 py-4 rounded-3xl w-full text-indigo-900" placeholder="残高" />
+                                                <div className="text-[10px] font-black text-indigo-400 uppercase mb-3 ml-1">引いた後の残投資金 (財布の残高) <span className="text-[7px] italic">※「円」OK</span></div>
+                                                <input type="text" value={editData.remaining ?? 0} onChange={e => setEditData({ ...editData, remaining: e.target.value })} className="bg-white border-2 border-indigo-200 text-2xl font-black px-6 py-4 rounded-3xl w-full text-indigo-900" placeholder="5000円" />
                                                 <p className="text-[9px] text-slate-400 mt-3 ml-2 italic">※給料を引いた後の、手元にある現金の合計</p>
                                             </div>
 
