@@ -274,21 +274,47 @@
 
             const parseHours = (raw) => {
                 if (!raw) return 0;
-                if (raw.includes("~") || raw.includes("-") || raw.includes("〜") || raw.includes("～")) {
-                    const parts = raw.split(/[~～〜\-]/);
-                    const toMin = (s) => {
-                        if (!s) return 0;
-                        const [h, m] = s.trim().replace(/[：]/g, ":").split(":").map(Number);
-                        return (h || 0) * 60 + (m || 0);
-                    };
-                    if (parts.length === 2) {
+                let s = String(raw)
+                    .replace(/[：:時]/g, ":")
+                    .replace(/[~～〜－—―ー-]/g, "~")
+                    .replace(/[間ｈＨhH時間]/g, "")
+                    .replace(/[、，]/g, ".")
+                    .trim();
+
+                const toMin = (str) => {
+                    const t = str.trim();
+                    if (!t) return 0;
+                    if (t.includes(":")) {
+                        const parts = t.split(":");
+                        const h = parseInt(parts[0]) || 0;
+                        const m = parseInt(parts[1]) || 0;
+                        return h * 60 + m;
+                    }
+                    return (parseFloat(t) || 0) * 60;
+                };
+
+                if (s.includes("~")) {
+                    const parts = s.split("~");
+                    if (parts.length === 2 && parts[0] && parts[1]) {
                         const start = toMin(parts[0]);
                         let end = toMin(parts[1]);
+                        // 13:00 ~ 21:00 のような形式に対応。endがstartより小さい場合は翌日とみなす
                         if (end < start) end += 24 * 60;
-                        return Math.round((end - start) / 60 * 10) / 10;
+                        const diffH = (end - start) / 60;
+                        return Math.round(diffH * 4) / 4; // 15分(0.25h)単位で四捨五入
                     }
                 }
-                return parseFloat(String(raw).replace(/[hH時間]/g, "").replace(",", ".")) || 0;
+                return Math.round((parseFloat(s) || 0) * 4) / 4;
+            };
+
+            const parseFinance = (raw) => {
+                if (!raw) return 0;
+                let s = String(raw)
+                    .replace(/[枚円個玉]/g, "")
+                    .replace(/[，,]/g, "")
+                    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)) // 全角→半角
+                    .trim();
+                return parseFloat(s) || 0;
             };
 
             const addLog = () => {
@@ -302,16 +328,23 @@
             const submit = async () => {
                 if (logs.length === 0 || !reportInput.store) return showAlert("不備があります", "ログ履歴、または店舗名が入力されておりません。");
 
+                const m20 = parseFinance(reportInput.medal20);
+                const m5 = parseFinance(reportInput.medal5);
+                const p4 = parseFinance(reportInput.pachi4);
+                const c = parseFinance(reportInput.cash);
+                const s = parseFinance(reportInput.salary);
+                const r = parseFinance(reportInput.remainingCash);
+
                 const checkMsg = `
 【送信内容の最終確認】
 稼働日: ${reportInput.date}
 店舗名: ${reportInput.store}
-20スロ: ${reportInput.medal20 || 0}枚
-5スロ: ${reportInput.medal5 || 0}枚
-4パチ: ${reportInput.pachi4 || 0}玉
-投資: ${reportInput.cash || 0}円
-給料: ${reportInput.salary || 0}円
-残高: ${reportInput.remainingCash || 0}円
+20スロ: ${m20}枚
+5スロ: ${m5}枚
+4パチ: ${p4}玉
+投資: ${c}円
+給料: ${s}円
+残高: ${r}円
 
 この内容で間違いありませんか？
 `.trim();
@@ -328,12 +361,12 @@
                         details: logText,
                         hours: calculatedHours,
                         rawHours: reportInput.hours,
-                        medal20: reportInput.medal20,
-                        medal5: reportInput.medal5,
-                        pachi4: reportInput.pachi4,
-                        cash: reportInput.cash,
-                        salary: reportInput.salary,
-                        remaining: reportInput.remainingCash,
+                        medal20: m20,
+                        medal5: m5,
+                        pachi4: p4,
+                        cash: c,
+                        salary: s,
+                        remaining: r,
                         memo: reportInput.memo
                     };
                     try {
@@ -488,11 +521,11 @@
                                             <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest px-1">詳細情報の入力</div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
-                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">稼働日</label>
+                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">稼働日</label>
                                                     <input type="date" value={reportInput.date} onChange={e => setReportInput({ ...reportInput, date: e.target.value })} className="input-dark py-3 font-bold text-xs" />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">店舗名</label>
+                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">店舗名</label>
                                                     <input value={reportInput.store} onChange={e => setReportInput({ ...reportInput, store: e.target.value })} className="input-dark font-bold text-base" placeholder="例: マルハン〇〇店" />
                                                 </div>
                                             </div>
@@ -509,48 +542,48 @@
                                                     <div className="space-y-4">
                                                         <div className="relative group">
                                                             <div className="absolute -top-2 left-3 bg-slate-800 px-2 text-[8px] font-black text-rose-500 z-10 group-focus-within:text-rose-400 transition-colors uppercase tracking-widest">20スロ</div>
-                                                            <input type="number" value={reportInput.medal20} onChange={e => setReportInput({ ...reportInput, medal20: e.target.value })} className="input-dark py-3 font-bold text-center border-rose-500/20 focus:border-rose-500/50" placeholder="枚数 (20スロ)" />
+                                                            <input type="text" inputmode="numeric" value={reportInput.medal20} onChange={e => setReportInput({ ...reportInput, medal20: e.target.value })} className="input-dark py-3 font-bold text-center border-rose-500/20 focus:border-rose-500/50" placeholder="例: 2500枚" />
                                                         </div>
                                                         <div className="relative group">
                                                             <div className="absolute -top-2 left-3 bg-slate-800 px-2 text-[8px] font-black text-indigo-500 z-10 group-focus-within:text-indigo-400 transition-colors uppercase tracking-widest">5スロ</div>
-                                                            <input type="number" value={reportInput.medal5} onChange={e => setReportInput({ ...reportInput, medal5: e.target.value })} className="input-dark py-3 font-bold text-center border-indigo-500/20 focus:border-indigo-500/50" placeholder="枚数 (5スロ)" />
+                                                            <input type="text" inputmode="numeric" value={reportInput.medal5} onChange={e => setReportInput({ ...reportInput, medal5: e.target.value })} className="input-dark py-3 font-bold text-center border-indigo-500/20 focus:border-indigo-500/50" placeholder="例: 1000枚" />
                                                         </div>
                                                         <div className="relative group">
                                                             <div className="absolute -top-2 left-3 bg-slate-800 px-2 text-[8px] font-black text-emerald-500 z-10 group-focus-within:text-emerald-400 transition-colors uppercase tracking-widest">4円パチ</div>
-                                                            <input type="number" value={reportInput.pachi4} onChange={e => setReportInput({ ...reportInput, pachi4: e.target.value })} className="input-dark py-3 font-bold text-center border-emerald-500/20 focus:border-emerald-500/50" placeholder="玉数 (4パチ)" />
+                                                            <input type="text" inputmode="numeric" value={reportInput.pachi4} onChange={e => setReportInput({ ...reportInput, pachi4: e.target.value })} className="input-dark py-3 font-bold text-center border-emerald-500/20 focus:border-emerald-500/50" placeholder="例: 5000玉" />
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div>
-                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">本日投資 (円)</label>
-                                                    <input type="number" value={reportInput.cash} onChange={e => setReportInput({ ...reportInput, cash: e.target.value })} className="input-dark font-bold" placeholder="例: 20000" />
-                                                    <p className="text-[8px] text-slate-500 mt-1">※現金投資した場合のみ</p>
+                                                <div className="bg-slate-900/40 p-5 rounded-2xl border border-white/5 space-y-4 shadow-inner">
+                                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">金銭収支</div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">本日投資 (円)</label>
+                                                            <input type="text" inputmode="numeric" value={reportInput.cash} onChange={e => setReportInput({ ...reportInput, cash: e.target.value })} className="input-dark font-bold py-2 text-sm" placeholder="15000円" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block mb-1.5 px-1">本日の給料</label>
+                                                            <input type="text" inputmode="numeric" value={reportInput.salary} onChange={e => setReportInput({ ...reportInput, salary: e.target.value })} className="input-dark font-bold text-sm border-emerald-500/20 py-2" placeholder="10000円" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-indigo-500/5 p-4 rounded-xl border border-indigo-500/10">
+                                                        <label className="text-[9px] font-black text-indigo-300 uppercase tracking-widest block mb-1.5 px-1">残投資金 (財布の残高)</label>
+                                                        <input type="text" inputmode="numeric" value={reportInput.remainingCash} onChange={e => setReportInput({ ...reportInput, remainingCash: e.target.value })} className="input-dark font-black text-lg border-indigo-500/30 py-2" placeholder="5000円" />
+                                                    </div>
                                                 </div>
+
                                                 <div>
-                                                    <label className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block mb-2 px-1">本日の給料</label>
-                                                    <input type="number" value={reportInput.salary} onChange={e => setReportInput({ ...reportInput, salary: e.target.value })} className="input-dark font-bold border-emerald-500/20" placeholder="例: 10000" />
+                                                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">メモ・備考</label>
+                                                    <textarea value={reportInput.memo} onChange={e => setReportInput({ ...reportInput, memo: e.target.value })} className="input-dark h-24 text-xs leading-relaxed" placeholder="環境や立ち回りなど..."></textarea>
                                                 </div>
                                             </div>
 
-                                            <div className="bg-indigo-500/5 p-4 rounded-xl border border-indigo-500/10">
-                                                <label className="text-[9px] font-black text-indigo-300 uppercase tracking-widest block mb-2 px-1">引いた後の残投資金 (財布の残高)</label>
-                                                <input type="number" value={reportInput.remainingCash} onChange={e => setReportInput({ ...reportInput, remainingCash: e.target.value })} className="input-dark font-black text-lg border-indigo-500/30" placeholder="例: 20000" />
-                                                <p className="text-[8px] text-slate-500 mt-1.5 font-bold italic">※給料を引いた後の、手元にある現金の合計を入力してください。</p>
-                                            </div>
-
-                                            <div>
-                                                <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-2 px-1">メモ・備考</label>
-                                                <textarea value={reportInput.memo} onChange={e => setReportInput({ ...reportInput, memo: e.target.value })} className="input-dark h-24 text-xs leading-relaxed" placeholder="今日の環境や立ち回りなど..."></textarea>
-                                            </div>
+                                            <button onClick={submit} disabled={submitting} className={`btn-premium shadow-lg shadow-indigo-500/20 py-5 text-lg ${submitting ? 'opacity-50' : ''}`}>
+                                                {submitting ? '送信中...' : '報告を送信して終了する'}
+                                            </button>
+                                            <p className="text-[10px] text-slate-600 text-center font-bold pb-10">※送信するとログ履歴はリセットされます</p>
                                         </section>
-
-                                        <button onClick={submit} disabled={submitting} className={`btn-premium shadow-lg shadow-indigo-500/20 py-5 text-lg ${submitting ? 'opacity-50' : ''}`}>
-                                            {submitting ? '送信中...' : '報告を送信して終了する'}
-                                        </button>
-                                        <p className="text-[10px] text-slate-600 text-center font-bold pb-10">※送信すると上のログ履歴はリセットされます</p>
                                     </div>
                                 )}
 
@@ -676,7 +709,8 @@
                                                             <ul className="text-[11px] space-y-2 pt-2 text-slate-300">
                                                                 <li className="flex gap-2"><span>・</span><span><strong className="text-white">本日投資:</strong> 遊技に要した総現金投資額。</span></li>
                                                                 <li className="flex gap-2"><span>・</span><span><strong className="text-white">本日の給料:</strong> 業務終了時に受け取った給料額。</span></li>
-                                                                <li className="flex gap-2"><span>・</span><span><strong className="text-white">残投資金:</strong> 給料受取後、現在手元に残っている現金額（財布の残高）。</span></li>
+                                                                <li className="flex gap-2"><span>・</span><span><strong className="text-white">残投資金:</strong> 給料受取後、現在手元に残っている現金額。</span></li>
+                                                                <li className="flex gap-2"><span>・</span><span><strong className="text-white">最終枚数:</strong> 20スロ等の流した枚数。</span></li>
                                                             </ul>
                                                         </div>
                                                     </div>
